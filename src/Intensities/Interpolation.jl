@@ -158,10 +158,10 @@ function intensities_interpolated!(intensities, sc::SampledCorrelations, q_targe
     li_intensities = LinearIndices(intensities)
     ci_targets = CartesianIndices(q_targets)
 
-    # Compute the location of each q_target within its cell in R.L.U.
-    # (which is an axis-aligned unit cube) with coordinates given as
-    # the fractional distance along each side of the cube.
-    m_targets = [mod.(sc.latsize .* q_target,1) for q_target in q_targets]
+    # Compute the location of each q_target within its cell in R.L.U. (which is
+    # an axis-aligned unit cube) with coordinates given as the fractional
+    # distance along each side of the cube.
+    m_targets = [mod.(sc.latsize .* q_target, 1) for q_target in q_targets]
 
     (; ks_all, idcs_all, counts) = stencil_info 
     for iω in eachindex(ωvals)
@@ -177,6 +177,19 @@ function intensities_interpolated!(intensities, sc::SampledCorrelations, q_targe
             end
         end
     end
+
+    # If Δω is nan then this is an "instantaneous" structure factor, and no
+    # processing of the ω axis is needed.
+    if !isnan(sc.Δω)
+        n_all_ω = size(sc.samplebuf,6)
+        # The usual discrete fourier transform (implemented by FFT) produces an
+        # extensive result. Dividing by n_all_ω makes the result intensive
+        # (i.e., intensity scale becomes independent of the number of ω values).
+        # Additionally dividing by Δω produces a density in ω space. Note that
+        # intensities is already a density in q space.
+        intensities ./= (n_all_ω * sc.Δω)
+    end
+
     return intensities
 end
 

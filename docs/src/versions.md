@@ -1,7 +1,28 @@
 # Version History
 
+## v0.6.0
+(In progress)
+
+* Various correctness fixes. The magnetic moment is now anti-aligned with the
+  spin dipole ([Issue 190](https://github.com/SunnySuite/Sunny.jl/issues/190)),
+  and the wavevector $𝐪$ in structure factor intensities $\mathcal{S}(𝐪,ω)$
+  now consistently represents momentum transfer _to_ the sample ([Issue
+  270](https://github.com/SunnySuite/Sunny.jl/issues/270)). The new [Example
+  8](@ref "8. Momentum transfer conventions") demonstrates a model system where
+  momentum transfers $±𝐪$ are inequivalent.
+* Dynamical structure factor intensities now have a [precisely defined
+  scale](@ref "Conventions for the Sunny-calculated structure factor"),
+  independent of the calculator ([Issue
+  264](https://github.com/SunnySuite/Sunny.jl/issues/264)). Consequently, color
+  ranges in plots may need to be rescaled.
+
+## v0.5.11
+(June 2, 2024)
+
+* Fixes for Makie 0.21.
+
 ## v0.5.10
-(In development)
+(May 27, 2024)
 
 * [`view_crystal`](@ref) called on a [`System`](@ref) now shows interactions,
   and optionally the spin or magnetic dipoles.
@@ -18,9 +39,11 @@
   the ported [SpinW tutorial 19](@ref "SW19 - Different magnetic ions").
 * Broadening kernels [`gaussian`](@ref) and [`lorentzian`](@ref) now expect a
   full width at half maximum (`fwhm`) keyword argument.
-* Correctness fix for the case where spin-``S`` varies between sites in
-  dipole-mode. In SU(``N``) mode, however, there is still no support for varying
-  the Hilbert space dimension ``N`` between sites.
+* Experimental support for calculations on generalized spiral phases. For an
+  example, see the ported [SpinW tutorial 18](@ref "SW18 - Distorted kagome").
+* Correctness fix for the case where spin-$S$ varies between sites in
+  dipole-mode. In SU($N$) mode, however, there is still no support for varying
+  the Hilbert space dimension $N$ between sites.
 * Correctness fix in long-range dipole-dipole interactions for systems with
   multiple cells.
 * Correctness fix in general biquadratic interactions (beyond scalar) for spin
@@ -32,7 +55,7 @@
 (Mar 25, 2024)
 
 * **Correctness fixes**: Structure factor conventions are now uniform across
-  modes and [precisely specified](@ref "Structure Factor Conventions"). The
+  modes and [precisely specified](@ref "Structure Factor Calculations"). The
   g-tensor is applied by default (disable with `apply_g = false`). The intensity
   is additive with increasing number of magnetic ions in the chemical cell,
   consistent with SpinW. [Issue

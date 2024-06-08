@@ -66,18 +66,17 @@ end
 """
     enable_dipole_dipole!(sys::System)
 
-Enables long-range dipole-dipole interactions,
+Enables long-range interactions between magnetic dipole moments,
 
 ```math
-    -(μ_0/4π) ∑_{⟨ij⟩}  (3 (𝐌_j⋅𝐫̂_{ij})(𝐌_i⋅𝐫̂_{ij}) - 𝐌_i⋅𝐌_j) / |𝐫_{ij}|^3
+    -(μ_0/4π) ∑_{⟨ij⟩}  [3 (μ_i⋅𝐫̂_{ij})(μ_j⋅𝐫̂_{ij}) - μ_i⋅μ_j] / r_{ij}^3
 ```
 
 where the sum is over all pairs of spins (singly counted), including periodic
-images, regularized using the Ewald summation convention. The magnetic moments
-are ``𝐌_i = μ_B g 𝐒_i`` where ``g`` is the g-factor or g-tensor, and ``𝐒_i``
-is the spin angular momentum dipole in units of ħ. The Bohr magneton ``μ_B`` and
-vacuum permeability ``μ_0`` are physical constants, with numerical values
-determined by the unit system.
+images, regularized using the Ewald summation convention. See
+[`magnetic_moment`](@ref) for the relationship between ``μ_i`` and the spin
+angular momentum. The vacuum permeability ``μ_0`` is a physical constant
+determined by system of [`Units`](@ref).
 """
 function enable_dipole_dipole!(sys::System{N}) where N
     sys.ewald = Ewald(sys)
@@ -87,7 +86,9 @@ end
 """
     set_external_field!(sys::System, B::Vec3)
 
-Sets the external field `B` that couples to all spins.
+Sets the external field ``𝐁`` that couples to all magnetic moments, ``- ∑_i
+𝐁⋅μ_i``. See [`magnetic_moment`](@ref) for the relationship between ``μ_i`` and
+the spin angular momentum.
 """
 function set_external_field!(sys::System, B)
     for site in eachsite(sys)
@@ -98,8 +99,9 @@ end
 """
     set_external_field_at!(sys::System, B::Vec3, site::Site)
 
-Sets a Zeeman coupling between a field `B` and a single spin. [`Site`](@ref)
-includes a unit cell and a sublattice index.
+Sets a local field ``𝐁`` that couples to a single magnetic moment, ``-𝐁⋅μ_i``.
+See [`magnetic_moment`](@ref) for the relationship between ``μ_i`` and the spin
+angular momentum. [`Site`](@ref) includes a unit cell and a sublattice index.
 """
 function set_external_field_at!(sys::System, B, site)
     sys.extfield[to_cartesian(site)] = Vec3(B)
@@ -137,7 +139,7 @@ function local_energy_change(sys::System{N}, site, state::SpinState) where N
     ΔE = 0.0
 
     # Zeeman coupling to external field
-    ΔE -= sys.units.μB * dot(extfield[site], sys.gs[site], Δs)
+    ΔE += sys.units.μB * dot(extfield[site], sys.gs[site], Δs)
 
     # Single-ion anisotropy, dipole or SUN mode
     if N == 0
@@ -214,7 +216,7 @@ function energy(sys::System{N}) where N
 
     # Zeeman coupling to external field
     for site in eachsite(sys)
-        E -= sys.units.μB * sys.extfield[site] ⋅ (sys.gs[site] * sys.dipoles[site])
+        E += sys.units.μB * sys.extfield[site] ⋅ (sys.gs[site] * sys.dipoles[site])
     end
 
     # Anisotropies and exchange interactions
@@ -325,7 +327,7 @@ function set_energy_grad_dipoles!(∇E, dipoles::Array{Vec3, 4}, sys::System{N})
 
     # Zeeman coupling
     for site in eachsite(sys)
-        ∇E[site] -= sys.units.μB * (sys.gs[site]' * sys.extfield[site])
+        ∇E[site] += sys.units.μB * (sys.gs[site]' * sys.extfield[site])
     end
 
     # Anisotropies and exchange interactions
@@ -496,23 +498,27 @@ function energy_grad_coherents(sys::System{N}) where N
 end
 
 
-# Check that the interactions of `sys` is invariant under the axis-angle of
-# rotation (n, θ)
-function check_rotational_symmetry(sys::System{N}; n, θ) where N
+# Check that the interactions of `sys` are invariant under a rotation about axis
+# by angle θ.
+function check_rotational_symmetry(sys::System{N}; axis, θ) where N
     # TODO: Employ absolute tolerance `atol` for all `isapprox` checks below.
     # This will better handle comparisons with zero. This will require special
     # implementation for isapprox(::StevensExpansion, ::StevensExpansion).
 
-    # An arbitrary small rotation about axis n
-    R = axis_angle_to_matrix(n, θ)
+    # Rotation about axis
+    R = axis_angle_to_matrix(axis, θ)
 
     # The 5×5 matrix V rotates the vector of quadratic Stevens operators
     # [O[2,2], ... O[2,-2]] by R
     V = operator_for_stevens_rotation(2, R)
 
-    # External field must be aligned with n
+    # External field must be aligned with axis
     for h in sys.extfield
-        @assert h⋅n ≈ norm(h) "Field not aligned with rotation axis"
+        @assert R * h ≈ h "Field not aligned with rotation axis"
+    end
+    for site in eachsite(sys)
+        g = sys.gs[site]
+        @assert g ≈ R' * g * R "g-tensor not invariant under rotation"
     end
 
     # Interactions must be invariant under rotation

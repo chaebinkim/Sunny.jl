@@ -249,8 +249,7 @@ end
         cryst = Crystal(latvecs, positions)
         q = [0.12, 0.23, 0.34]
         
-        dims = (2, 2, 1)
-        sys = System(cryst, dims, [SpinInfo(1; S, g=1)], :dipole; units=Units.theory)
+        sys = System(cryst, (1, 1, 1), [SpinInfo(1; S, g=1)], :dipole; units=Units.theory)
         set_exchange!(sys, J, Bond(1, 1, [1, 0, 0]))
         set_onsite_coupling!(sys, S -> D*S[3]^2, 1)
         set_external_field!(sys, [0, 0, h])
@@ -289,9 +288,9 @@ end
     cryst = Crystal(latvecs, positions, 1)
 
     dims = (1, 1, 1)
-    S = 3
-    sys_dip = System(cryst, dims, [SpinInfo(1; S, g=1)], :dipole)
-    sys_SUN = System(cryst, dims, [SpinInfo(1; S, g=1)], :SUN)
+    S = 2
+    sys_dip = System(cryst, dims, [SpinInfo(1; S, g=1)], :dipole; units=Units.theory)
+    sys_SUN = System(cryst, dims, [SpinInfo(1; S, g=1)], :SUN; units=Units.theory)
 
     # The strengths of single-ion anisotropy (must be negative to favor the dipolar ordering under consideration)
     Ds = -rand(3)
@@ -412,7 +411,7 @@ end
     
     for i in 1:3
         θ = -2π*(i-1)/3
-        set_spiral_order_on_sublattice!(sys, i; q=[0,0,1/7], axis=[0,0,1], S0=[cos(θ),sin(θ),0])
+        set_spiral_order_on_sublattice!(sys, i; k=[0,0,1/7], axis=[0,0,1], S0=[cos(θ),sin(θ),0])
     end
 
     swt = SpinWaveTheory(sys, apply_g=false)
@@ -726,7 +725,7 @@ end
         latvecs = lattice_vectors(a, a, a, 90, 90, 90)
         positions = [[0, 0, 0]]
         fcc = Crystal(latvecs, positions, 225)
-        sys_afm1 = System(fcc, (1, 1, 1), [SpinInfo(1, S=S, g=1)], mode, units=Units.theory)
+        sys_afm1 = System(fcc, (1, 1, 1), [SpinInfo(1; S, g=1)], mode; units=Units.theory)
         set_exchange!(sys_afm1, J, Bond(1, 2, [0, 0, 0]))
         set_dipole!(sys_afm1, (0, 0,  1), position_to_site(sys_afm1, (0, 0, 0)))
         set_dipole!(sys_afm1, (0, 0, -1), position_to_site(sys_afm1, (1/2, 1/2, 0)))
@@ -758,7 +757,7 @@ end
         cryst = Crystal(latvecs, [[0, 0, 0]])
         sys = System(cryst, (3, 3, 1), [SpinInfo(1, S=S, g=2)], mode)
         set_exchange!(sys, J, Bond(1, 1, [1, 0, 0]))
-        set_spiral_order!(sys; q=[2/3, -1/3, 0], axis=[0, 0, 1], S0=[0, 1, 0])
+        set_spiral_order!(sys; k=[2/3, -1/3, 0], axis=[0, 0, 1], S0=[0, 1, 0])
         swt = SpinWaveTheory(sys)
         # Calculate first 3 digits for faster testing
         δS = Sunny.magnetization_lswt_correction(swt; atol=1e-3)[1]

@@ -34,15 +34,17 @@
     S = spin_matrices(1/2)
     observables = Dict(:Sx => S[1], :Sy => S[2], :Sz => S[3])
     sc = dynamical_correlations(sys; nω=100, ωmax=10.0, dt=0.1, apply_g=false, observables)
+    Δω = sc.Δω
     add_sample!(sc, sys)
     qgrid = available_wave_vectors(sc)
+    Δq³ = 1/prod(sys.latsize) # Fraction of a BZ
     formula = intensity_formula(sc,:trace)
     Sqw = intensities_interpolated(sc, qgrid, formula; negative_energies=true)
-    # A simple sum (rather than energy-integral) is possible because a `Δω`
-    # factor is already included in the Sqw intensity data. This convention will
-    # change per https://github.com/SunnySuite/Sunny.jl/issues/264
-    expected_sum_rule = prod(sys.latsize) * Sunny.norm2(sys.dipoles[1]) # NS^2 classical sum rule
-    @test isapprox(sum(Sqw), expected_sum_rule; atol=1e-12)
+    expected_sum_rule = Sunny.norm2(sys.dipoles[1]) # S^2 classical sum rule
+    @test isapprox(sum(Sqw) * Δq³ * Δω, expected_sum_rule; atol=1e-12)
+    params = unit_resolution_binning_parameters(sc;negative_energies=true)
+    Sqw_integrated, counts = intensities_binned(sc, params, formula)
+    @test isapprox(sum(Sqw_integrated), expected_sum_rule; atol=1e-12)
 
     # Test sum rule with default observables in dipole mode 
     sys = simple_model_fcc(; mode=:dipole)
@@ -52,8 +54,12 @@
     trace_formula = intensity_formula(sc,:trace)
     Sqw = intensities_interpolated(sc, qgrid, trace_formula; negative_energies=true)
     total_intensity_trace = sum(Sqw)
-    expected_sum_rule = prod(sys.latsize) * Sunny.norm2(sys.dipoles[1]) # NS^2 classical sum rule
-    @test isapprox(sum(Sqw), expected_sum_rule; atol=1e-12)
+    expected_sum_rule = Sunny.norm2(sys.dipoles[1]) # S^2 classical sum rule
+    @test isapprox(sum(Sqw) * Δq³ * Δω, expected_sum_rule; atol=1e-12)
+    # Test binned version doesn't require ΔqΔω measure
+    params = unit_resolution_binning_parameters(sc;negative_energies=true)
+    Sqw_integrated, counts = intensities_binned(sc, params, trace_formula)
+    @test isapprox(sum(Sqw_integrated), expected_sum_rule; atol=1e-12)
 
     # Test perp reduces intensity
     perp_formula = intensity_formula(sc,:perp)
@@ -150,10 +156,11 @@ end
 
     sc = dynamical_correlations(sys; nω=10, ωmax=5.5, dt=2dt_langevin)
     add_sample!(sc, sys)
-    qs = [[0.0, 0.0, 0.0], [0.2, -0.4, 0.1]]
+    qs = [[0.0, 0.0, 0.0], [-0.2, 0.4, -0.1]]
     data = intensities_interpolated(sc, qs, intensity_formula(sc, :trace; kT); interpolation=:linear)
+    # println(round.(data; digits=10))
 
     # Compare with reference
-    data_golden = [0.94615689 1.6758054878 0.0 0.0 -0.0 -0.0 0.0 0.0 -0.0 -0.0; 0.0252530805 0.0455240359 0.6633641526 2.7680376847 4.1836804699 5.3808432493 5.1410670814 1.4570600911 -0.1137274773 0.042984536]
+    data_golden = [1.5688306301 2.7786670553 0.0 -0.0 -0.0 -0.0 0.0 0.0 0.0 0.0; 0.0426896901 0.0728328515 1.158781671 4.9597712594 7.5012736668 9.3925254521 8.880657878 2.5146425508 -0.2026517626 0.0780611074]
     @test data ≈ data_golden
 end
