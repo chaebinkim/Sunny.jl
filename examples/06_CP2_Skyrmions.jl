@@ -29,13 +29,13 @@ lat_vecs = lattice_vectors(1, 1, 10, 90, 90, 120)
 basis_vecs = [[0,0,0]]
 cryst = Crystal(lat_vecs, basis_vecs)
 
-# The crystal is then used to create a spin [`System`](@ref). All parameters in
-# this model system are dimensionless, so we select "theory" units and set the
-# g-factor to one. 
+# Create a spin [`System`](@ref) containing $L×L$ cells. Selecting
+# [`Units.theory`](@ref Units) with $g=-1$ provides a dimensionless Zeeman
+# coupling of the form $-𝐁⋅𝐬$.
 
 L = 40
 dims = (L, L, 1)
-sys = System(cryst, dims, [SpinInfo(1, S=1, g=1)], :SUN; seed=101, units=Units.theory)
+sys = System(cryst, dims, [SpinInfo(1, S=1, g=-1)], :SUN; seed=101)
 
 # We proceed to implement each term of the Hamiltonian, selecting our parameters
 # so that the system occupies a region of the phase diagram that supports
@@ -57,7 +57,7 @@ set_exchange!(sys, ex2, Bond(1, 1, [1, 2, 0]))
 # Next we add the external field,
 
 h = 15.5
-field = set_external_field!(sys, [0, 0, h])
+field = set_field!(sys, [0, 0, h])
 
 # and finally an easy-plane single-ion anisotropy,
 

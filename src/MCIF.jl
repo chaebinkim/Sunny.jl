@@ -20,10 +20,26 @@ function set_dipoles_from_mcif!(sys::System, filename::AbstractString)
 
     # TODO: Tolerance to permutations (with sign flips) of lattice vectors
     if !isapprox(supervecs, supervecs2; rtol=sys.crystal.symprec)
-        error("""Invalid supercell dimensions,
-                   System: $supervecs
-                   mCIF:   $supervecs2
-                 """)
+        tol = 0.1 * sys.crystal.symprec # Tolerance might need tuning
+        orig_cryst = orig_crystal(sys)
+
+        primvecs = @something orig_cryst.prim_latvecs orig_cryst.latvecs
+
+        suggestion = if all(isinteger.(rationalize.(primvecs \ supervecs2; tol)))
+            suggested_shape = rationalize.(orig_cryst.latvecs \ supervecs2; tol)
+            suggestion = if isdiag(suggested_shape)
+                sz = fractional_vec3_to_string(diag(suggested_shape))
+                error("Use `resize_supercell(sys, $sz)` to get compatible system")
+            else
+                shp = fractional_mat3_to_string(suggested_shape)
+                error("Use `reshape_supercell(sys, $shp)` to get compatible system")
+            end
+        else
+            error("""System dimensions are incompatible with mCIF cell,
+                         System: $supervecs
+                         mCIF:   $supervecs2
+                     """)
+        end
     end
 
     oneof(fields...) = findfirstval(in(keys(cif)), fields)
@@ -98,7 +114,7 @@ function set_dipoles_from_mcif_aux!(sys; positions, moments, magn_operations, ma
             end
 
             # Get spin dipole by inverting the `magnetic_moment` transformation
-            dipole = inv(- sys.units.μB * sys.gs[site]) * μ_new
+            dipole = - sys.gs[site] \ μ_new
             s_prev = sys.dipoles[site]
             set_dipole!(sys, dipole, site)
             s_prev == zero(Vec3) || s_prev ≈ sys.dipoles[site] || error("Conflicting dipoles at site $site")
