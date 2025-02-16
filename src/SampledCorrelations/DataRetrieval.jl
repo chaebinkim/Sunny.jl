@@ -1,196 +1,186 @@
-struct ClassicalIntensityFormula{T} <: IntensityFormula
-    kT :: Float64
-    formfactors :: Union{Nothing, Vector{FormFactor}}
-    string_formula :: String
-    calc_intensity :: Function
+# Takes a list of q points, converts into SampledCorrelation.data indices and
+# corresponding exact wave vectors, and eliminates repeated elements.
+function pruned_wave_vector_info(sc::SampledCorrelations, qs)
+
+    # Round to the nearest wavevector and wrapped index
+    Ls = size(sc.samplebuf)[2:4]
+    ms = map(qs) do q 
+        round.(Int, Ls .* q)
+    end
+    idcs = map(ms) do m
+        CartesianIndex{3}(map(i -> mod(m[i], Ls[i])+1, (1, 2, 3)))
+    end
+
+    # Convert to absolute units (for form factors)
+    qabs_rounded = map(m -> sc.crystal.recipvecs * (m ./ sc.sys_dims), ms)
+
+    # List of "starting" pointers i where qabs_rounded[i-1] != qabs_rounded[i],
+    # i.e., indices where the desired wave vector is distinct from the previous
+    # one.
+    starts = findall(i -> i == 1 || !isapprox(qabs_rounded[i-1], qabs_rounded[i]), eachindex(qabs_rounded))
+
+    # Length of each run of repeated values
+    counts = starts[2:end] - starts[1:end-1]
+    append!(counts, length(idcs) - starts[end] + 1)
+
+    # Remove contiguous repetitions
+    qabs = qabs_rounded[starts]
+    idcs = idcs[starts]
+
+    return (; qabs, idcs, counts)
 end
 
-function Base.show(io::IO, formula::ClassicalIntensityFormula{T}) where T
-    print(io,"ClassicalIntensityFormula{$T}")
-end
 
-function Base.show(io::IO, ::MIME"text/plain", formula::ClassicalIntensityFormula{T}) where T
-    printstyled(io, "Classical Scattering Intensity Formula\n";bold=true, color=:underline)
-
-    formula_lines = split(formula.string_formula,'\n')
-
-    println(io, "At discrete scattering modes S = S[ix_q,ix_ω], use:")
-    println(io)
-    print(io, "  Intensity[ix_q,ix_ω] = ")
-
-    intensity_equals = "  Intensity[ix_q,ix_ω] = "
-    spacing = repeat(' ', textwidth(intensity_equals))
-    println(io, intensity_equals, join(formula_lines, "\n" * spacing))
-
-    if isnothing(formula.formfactors)
-        printstyled(io, "No form factors specified\n";color=:yellow)
-    else
-        printstyled(io, "Form factors included in S ✓\n";color=:green)
-    end
-    if formula.kT == Inf
-        printstyled(io, "No temperature correction";color=:yellow)
-        print(io, " (kT = ∞)\n")
-    else
-        printstyled(io, "Temperature corrected (kT = $(formula.kT)) ✓\n";color = :green)
-    end
-    if T != Float64
-        println(io,"Intensity :: $(T)")
-    end
-end
-
-"""
-    formula = intensity_formula(sc::SampledCorrelations)
-
-Establish a formula for computing the intensity of the discrete scattering modes
-`(q,ω)` using the correlation data ``𝒮^{αβ}(q,ω)`` stored in the
-[`SampledCorrelations`](@ref). The `formula` returned from `intensity_formula`
-can be passed to [`intensities_interpolated`](@ref) or
-[`intensities_binned`](@ref).
-
-    intensity_formula(sc,...; kT = Inf, formfactors = ...)
-
-There are keyword arguments providing temperature and form factor corrections:
-
-- `kT`: If a temperature is provided, the intensities will be rescaled by a
-    temperature- and ω-dependent classical-to-quantum factor. `kT` should be
-    specified when making comparisons with spin wave calculations or
-    experimental data. If `kT` is not specified, infinite temperature (no
-    correction) is assumed.
-- `formfactors`: To apply form factor corrections, provide this keyword with a
-    list of `FormFactor`s, one for each symmetry-distinct site in the crystal.
-    The order of `FormFactor`s must correspond to the order of site symmetry
-    classes, e.g., as they appear when printed in `display(crystal)`.
-"""
-function intensity_formula(f::Function, sc::SampledCorrelations, corr_ix::AbstractVector{Int64}; 
-    kT = Inf, 
-    formfactors = nothing, 
-    return_type = Float64, 
-    string_formula = "f(Q,ω,S{α,β}[ix_q,ix_ω])"
-)
-    # If temperature given, ensure it's greater than 0.0
-    if kT != Inf
-        if iszero(kT)
-            error("`kT` must be greater than zero.")
-        end
-        # Only apply c2q factor if have dynamical correlations
-        if isnan(sc.Δω)
-            error("`kT`-dependent corrections not available when using correlation data generated with `instant_correlations`. Do not set `kT` keyword.")
+# Crude slow way to find the energy axis index closest to some given energy.
+function find_idx_of_nearest_fft_energy(ref, val)
+    for i in axes(ref[1:end-1], 1)
+        x1, x2 = ref[i], ref[i+1]
+        if x1 <= val <= x2 
+            if abs(x1 - val) < abs(x2 - val)
+                return i
+            else
+                return i+1
+            end
         end
     end
-
-    ωs_sc = available_energies(sc;negative_energies = true)
-
-    ff_atoms = propagate_form_factors_to_atoms(formfactors, sc.crystal)
-    NAtoms = Val(size(sc.data)[2])
-    NCorr = Val(length(corr_ix))
-
-    # Intensity is calculated at the discrete (ix_q,ix_ω) modes available to the system.
-    # Additionally, for momentum transfers outside of the first BZ, the norm `q_absolute` of the
-    # momentum transfer may be different than the one inferred from `ix_q`, so it needs
-    # to be provided independently of `ix_q`.
-    calc_intensity = function (sc::SampledCorrelations, q_absolute::Vec3, ix_q::CartesianIndex{3}, ix_ω::Int64)
-        correlations = phase_averaged_elements(view(sc.data, corr_ix, :, :, ix_q, ix_ω), q_absolute, sc.crystal, ff_atoms, NCorr, NAtoms)
-
-        # This is NaN if sc is instant_correlations
-        ω = (typeof(ωs_sc) == Float64 && isnan(ωs_sc)) ? NaN : ωs_sc[ix_ω] 
-
-        return f(q_absolute, ω, correlations) * classical_to_quantum(ω,kT)
+    # Deal with edge case arising due to FFT index ordering
+    if ref[end] <= val <= 0.0
+        if abs(ref[end] - val) <= abs(val)
+            return length(ref)
+        else
+            return 1
+        end
     end
-    ClassicalIntensityFormula{return_type}(kT, formfactors, string_formula, calc_intensity)
-end
-
-"""
-A custom intensity formula can be specifed by providing a function `intensity = f(q,ω,correlations)` and specifying which correlations it requires:
-
-    intensity_formula(f,sc::SampledCorrelations, required_correlations; kwargs...)
-
-The function is intended to be specified using `do` notation. For example, this custom formula sums the off-diagonal correlations:
-
-    required = [(:Sx,:Sy),(:Sy,:Sz),(:Sx,:Sz)]
-    intensity_formula(sc,required,return_type = ComplexF64) do k, ω, off_diagonal_correlations
-        sum(off_diagonal_correlations)
-    end
-
-If your custom formula returns a type other than `Float64`, use the `return_type` keyword argument to flag this.
-"""
-function intensity_formula(f::Function,sc,required_correlations; kwargs...)
-    # SQTODO: This corr_ix may contain repeated correlations if the user does a silly
-    # thing like [(:Sx,:Sy),(:Sy,:Sx)], and this can technically be optimized so it's
-    # not computed twice
-    corr_ix = lookup_correlations(sc.observables,required_correlations)
-    intensity_formula(f,sc,corr_ix;kwargs...)
+    error("Value does not lie in bounds of reference list.")
 end
 
 
-function classical_to_quantum(ω, kT::Float64)
-    if kT == Inf
-        return 1.0
+# If the user specifies an energy list, round to the nearest available energies
+# and give the corresponding indices into the raw data. This is fairly
+# inefficient, though the cost is likely trivial next to the rest of the
+# computation. Since this is an edge case (user typically expected to choose
+# :available or :available_with_negative), not spending time on optimization
+# now.
+function rounded_energy_information(sc, energies)
+    ωvals = available_energies(sc; negative_energies = true)
+    energies_sorted = sort(energies)
+    @assert all(x -> x ==true, energies .== energies_sorted) "Specified energies must be an ordered list."
+    @assert minimum(energies) >= minimum(ωvals) && maximum(energies) <= maximum(ωvals) "Specified energies includes values for which there is no available data."
+    ωidcs = map(val -> find_idx_of_nearest_fft_energy(ωvals, val), energies)
+    return ωvals[ωidcs], ωidcs
+end
+
+contains_dynamic_correlations(sc) = !isnan(sc.Δω)
+
+# Documented under intensities function for LSWT. TODO: As a hack, this function
+# is also being used as the back-end to intensities_static.
+function intensities(sc::SampledCorrelations, qpts; energies, kernel=nothing, kT)
+    if !isnothing(kT) && kT <= 0
+        error("Positive `kT` required for classical-to-quantum corrections, or set `kT=nothing` to disable.")
     end
-    if ω > 0
-        ω/(kT*(1 - exp(-ω/kT)))
-    elseif iszero(ω)
-        1.0
+    if !isnothing(kernel)
+        error("Kernel post-processing not yet available for `SampledCorrelations`.")
+    end
+
+    # Determine energy information
+    (ωs, ωidcs) = if energies == :available
+        ωs = available_energies(sc; negative_energies=false)
+        (ωs, axes(ωs, 1))
+    elseif energies == :available_with_negative
+        ωs = available_energies(sc; negative_energies=true)
+        (ωs, axes(ωs, 1))
     else
-        -ω*exp(ω/kT)/(kT*(1 - exp(ω/kT)))
+        rounded_energy_information(sc, energies)
+    end
+
+    # Prepare memory and configuration variables for actual calculation
+    qpts = Base.convert(AbstractQPoints, qpts)
+    qs_reshaped = [to_reshaped_rlu(sc, q) for q in qpts.qs]
+
+    ffs = sc.measure.formfactors[1, :] # FIXME
+    intensities = zeros(eltype(sc.measure), isnan(sc.Δω) ? 1 : length(ωs), length(qpts.qs)) # N.B.: Inefficient indexing order to mimic LSWT
+    q_idx_info = pruned_wave_vector_info(sc, qs_reshaped)
+    crystal = @something sc.origin_crystal sc.crystal
+    NCorr  = Val{size(sc.data, 1)}()
+    # NPos = Val{size(sc.data, 2)}()
+    NPos = Val{length(sc.crystal.positions)}()
+
+    # Intensities calculation
+    intensities_aux!(intensities, sc.data, sc.crystal, sc.positions, sc.measure.combiner, ffs, q_idx_info, ωidcs, NCorr, NPos)
+
+    # Convert to a q-space density in original (not reshaped) RLU.
+    intensities .*= det(sc.crystal.recipvecs) / det(crystal.recipvecs)
+
+    # Post-processing steps for dynamical correlations 
+    if contains_dynamic_correlations(sc) 
+        # Convert time axis to a density.
+        n_all_ω = size(sc.samplebuf, 6)
+        intensities ./= (n_all_ω * sc.Δω)
+
+        # Apply classical-to-quantum correspondence factor for finite kT
+        if !isnothing(kT)
+            # Equivalent to abs(ω/kT) * thermal_prefactor(ω; kT)
+            c2q = [iszero(ω) ? 1 : abs((ω/kT) / (1 - exp(-ω/kT))) for ω in ωs]
+            for i in axes(intensities, 2)
+                intensities[:, i] .*= c2q
+            end
+        end
+    end
+
+    intensities = reshape(intensities, length(ωs), size(qpts.qs)...)
+
+    return if contains_dynamic_correlations(sc) 
+        Intensities(crystal, qpts, collect(ωs), intensities)
+    else
+        StaticIntensities(crystal, qpts, dropdims(intensities; dims=1))
     end
 end
 
-"""
-    gaussian(; {fwhm, σ})
+function intensities_aux!(intensities, data, crystal, positions, combiner, ff_atoms, q_idx_info, ωidcs, ::Val{NCorr}, ::Val{NPos}) where {NCorr, NPos}
+    (; qabs, idcs, counts) = q_idx_info 
+    (; recipvecs) = crystal 
+    qidx = 1
+    for (qabs, idx, count) in zip(qabs, idcs, counts)
+        prefactors = prefactors_for_phase_averaging(qabs, recipvecs, view(positions, idx, :), ff_atoms, Val{NCorr}(), Val{NPos}())
 
-Returns the function `exp(-x^2/2σ^2) / √(2π*σ^2)`. Exactly one of `fwhm` or `σ`
-must be specified, where `fwhm = (2.355...) * σ` denotes the full width at half
-maximum.
-"""
-function gaussian(; fwhm=nothing, σ=nothing)
-    if sum(.!isnothing.((fwhm, σ))) != 1
-        error("Exactly one of `fwhm` and `σ` must be specified.")
+        # Perform phase-averaging over all omega
+        for (n, iω) in enumerate(ωidcs)
+            elems = zero(SVector{NCorr, ComplexF64})
+            for j in 1:NPos, i in 1:NPos
+                elems += (prefactors[i] * conj(prefactors[j])) * SVector{NCorr}(view(data, :, i, j, idx, iω))
+            end
+            val = combiner(qabs, elems)
+            intensities[n, qidx] = val
+        end
+
+        # Copy for repeated q-values
+        for idx in qidx+1:qidx+count-1, n in axes(ωidcs, 1)
+            intensities[n, idx] = intensities[n, qidx]
+        end
+
+        qidx += count
     end
-    σ = Float64(@something σ (fwhm/2√(2log(2))))
-    return x -> exp(-x^2/2σ^2) / √(2π*σ^2)
 end
 
 
-"""
-    integrated_gaussian(; {fwhm, σ}) 
-
-Returns the function `erf(x/√2σ)/2`, which is the integral of [`gaussian`](@ref)
-over the range ``[0, x]``. Exactly one of `fwhm` or `σ` must be specified, where
-`fwhm = (2.355...) * σ` denotes the full width at half maximum. Intended for use
-with [`intensities_binned`](@ref).
-"""
-function integrated_gaussian(; fwhm=nothing, σ=nothing)
-    if sum(.!isnothing.((fwhm, σ))) != 1
-        error("Exactly one of `fwhm` and `σ` must be specified.")
+function intensities_static(sc::SampledCorrelations, qpts; bounds = (-Inf, Inf), kT)
+    ωs = available_energies(sc; negative_energies=true)
+    ωidcs = findall(x -> bounds[1] <= x < bounds[2], ωs)
+    if iszero(length(ωidcs))
+        error("No information available within specified energy `bounds`. Try a larger interval.")
     end
-    σ = Float64(@something σ (fwhm/2√(2log(2))))
-    return x -> erf(x/√2σ)/2
+    energies = sort(ωs[ωidcs])
+    res = intensities(sc, qpts; kT, energies)
+    data_new = dropdims(sum(res.data, dims=1), dims=1) * sc.Δω
+    StaticIntensities(res.crystal, res.qpts, data_new)
 end
 
-"""
-    lorentzian(; fwhm)
-
-Returns the function `(Γ/2) / (π*(x^2+(Γ/2)^2))` where `Γ = fwhm` is the full
-width at half maximum.
-"""
-function lorentzian(; fwhm)
-    Γ = fwhm
-    return x -> (Γ/2) / (π*(x^2+(Γ/2)^2))
-end
-
-"""
-    integrated_lorentzian(; fwhm) 
-
-Returns the function `atan(2x/Γ)/π`, which is the integral of
-[`lorentzian`](@ref) over the range ``[0, x]``, where `Γ = fwhm` is the full
-width at half maximum. Intended for use with [`intensities_binned`](@ref).
-"""
-function integrated_lorentzian(; fwhm)
-    Γ = fwhm
-    return x -> atan(2x/Γ)/π
+function intensities_static(sc::SampledCorrelationsStatic, qpts)
+    intensities(sc.parent, qpts; kT=nothing, energies=:available)
 end
 
 
+#=
 """
     broaden_energy(sc::SampledCorrelations, vals, kernel::Function; negative_energies=false)
 
@@ -202,7 +192,7 @@ center frequency of the kernel. Sunny provides [`lorentzian`](@ref)
 for the most common use case:
 
 ```
-newvals = broaden_energy(sc, vals, (ω, ω₀) -> lorentzian(fwhm=0.2)(ω-ω₀))
+newvals = broaden_energy(sc, vals, (ω, ω₀) -> lorentzian06(fwhm=0.2)(ω-ω₀))
 ```
 """
 function broaden_energy(sc::SampledCorrelations, is, kernel::Function; negative_energies=false)
@@ -218,3 +208,6 @@ function broaden_energy(sc::SampledCorrelations, is, kernel::Function; negative_
     end
     return out
 end
+=#
+
+

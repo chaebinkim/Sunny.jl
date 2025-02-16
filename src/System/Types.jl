@@ -1,6 +1,8 @@
-# Stevens function expansion, renormalized for dipole projection
+# Coefficients for an expansion in Stevens functions. Each component ck lists
+# coefficients in descending order q = k,..-k. In :dipole mode, the
+# renormalization factors (`rcs_factor`) are included in these coefficients.
 struct StevensExpansion
-    kmax ::Int
+    kmax :: Int
     c0 :: SVector{1, Float64}
     c2 :: SVector{5, Float64}
     c4 :: SVector{9, Float64}
@@ -29,7 +31,7 @@ end
 # the basis of Stevens quadrupoles O_{2,q}. These numbers derive from the
 # non-uniform normalization convention of the Stevens quadrupoles:
 #=
-    O = stevens_matrices(S)  # arbitrary spin-S
+    O = stevens_matrices(s)  # arbitrary spin-s
     c = (1/6)norm(O[2,0])^2
     [c / norm(O[2,q])^2 for q in 2:-1:-2] ≈ [1/2, 2, 1/6, 2, 1/2]
 =#
@@ -45,7 +47,7 @@ struct PairCoupling
     # If `biquad` is a scalar, then it will denote a multiple the rotationally
     # invariant biquadratic coupling, `diagm(scalar_biquad_metric)`. In :dipole
     # mode, biquad couplings stored here will include a renormalization factor,
-    # (1-1/2S₁)(1-1/2S₂), as derived in https://arxiv.org/abs/2304.03874.
+    # (1-1/2s₁)(1-1/2s₂), as derived in https://arxiv.org/abs/2304.03874.
     scalar   :: Float64              # Constant shift
     bilin    :: Union{Float64, Mat3} # Bilinear
     biquad   :: Union{Float64, Mat5} # Biquadratic
@@ -84,15 +86,15 @@ struct Ewald
 end
 
 mutable struct System{N}
-    const origin           :: Union{Nothing, System{N}}
-    const mode             :: Symbol                    # :SUN, :dipole, or :dipole_large_S
+    const origin           :: Union{Nothing, System{N}} # System for the original chemical cell
+    const mode             :: Symbol                    # :SUN, :dipole, or :dipole_uncorrected
 
     const crystal          :: Crystal
-    const latsize          :: NTuple{3, Int}            # Size of lattice in unit cells
+    const dims             :: NTuple{3, Int}            # Dimensions of lattice in unit cells
 
     # To facilitate handling of inhomogeneous systems, these are stored for
-    # every cell in the system
-    const Ns               :: Array{Int, 4}             # S=(N-1)/2 per atom in unit cell
+    # every cell in the system (dims × natoms)
+    const Ns               :: Array{Int, 4}             # s=(N-1)/2 per atom in unit cell
     const κs               :: Array{Float64, 4}         # Sets either |Z| = √κ or |s| = κ
     const gs               :: Array{Mat3, 4}            # g-tensor per atom in unit cell
 
@@ -103,7 +105,7 @@ mutable struct System{N}
     # Optional long-range dipole-dipole interactions
     ewald                  :: Union{Ewald, Nothing}
 
-    # Dynamical variables and buffers
+    # Dynamical variables and buffers (dims × natoms)
     const extfield         :: Array{Vec3, 4}            # External B field
     const dipoles          :: Array{Vec3, 4}            # Expected dipoles
     const coherents        :: Array{CVec{N}, 4}         # Coherent states

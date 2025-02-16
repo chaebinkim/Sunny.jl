@@ -10,14 +10,16 @@ function angle_between_vectors(u, v)
 end
 
 # Returns that smallest rotation matrix R such that `R u = v` where u and v are
-# the normalized input vectors. If `u = v` then `R = I` and if `u = -v` then R
+# the input vectors, normalized. If `u = v` then `R = I` and if `u = -v` then R
 # is a rotation by π about an arbitrary axis perpendicular to u and v.
 function rotation_between_vectors(u, v)
+    @assert !iszero(u) && !iszero(v)
+
     u, v = normalize.((u, v))
     axis = u × v
     θ = angle_between_vectors(u, v)
 
-    if iszero(norm(axis))
+    if iszero(axis)
         # Need to find an arbitrary axis that is orthogonal to u and v. First,
         # find a normalized vector w such that w⋅u ≠ ±1.
         _, i = findmin(abs.(u))
@@ -30,12 +32,13 @@ function rotation_between_vectors(u, v)
     return R
 end
 
-# Magnitude of axis n is ignored. Angle θ in radians. By Rodrigues formula, is
+# Magnitude of axis is ignored. Angle θ in radians. By Rodrigues formula, is
 # equivalently written `I + s K + (1-c) K²`, with `K = [0 -z y; z 0 -x; -y x 0]`
-# involving `s, c = sincos(θ)` and `x, y, z = normalize(n)`.
-function axis_angle_to_matrix(n, θ)
-    @assert !iszero(norm(n))
-    x, y, z = normalize(n)
+# involving `s, c = sincos(θ)` and `x, y, z = normalize(axis)`.
+function axis_angle_to_matrix(axis, θ)
+    @assert !iszero(axis)
+
+    x, y, z = normalize(axis)
     s, c = sincos(θ)
     t = 1 - c
     return SA[t*x*x+c    t*x*y-z*s  t*x*z+y*s
@@ -118,7 +121,8 @@ function unitary_for_rotation(R::Mat3, gen)
     return exp(-im*θ*(n'*gen))
 end
 
-# Unitary for a rotation matrix in the N-dimensional irrep of SU(2).
+# Unitary for a rotation matrix in the N-dimensional irrep of SU(2). TODO: Use
+# polynomial expansions for speed: http://www.emis.de/journals/SIGMA/2014/084/.
 function unitary_irrep_for_rotation(R::Mat3; N::Int)
     gen = spin_matrices_of_dim(; N)
     unitary_for_rotation(R, gen)
@@ -136,15 +140,16 @@ function unitary_tensor_for_rotation(R::Mat3; Ns)
     end
 end
 
-# TODO: Replace this with a function that takes generators.
 """
     rotate_operator(A, R)
 
 Rotates the local quantum operator `A` according to the ``3×3`` rotation matrix
 `R`.
 """
-function rotate_operator(A::HermitianC64, R)
+function rotate_operator(A::AbstractMatrix{ComplexF64}, R)
     isempty(A) && return A
+    A ≈ A' || error("Non-Hermitian operator")
+    A = hermitianpart(A)
     R = convert(Mat3, R)
     N = size(A, 1)
     U = unitary_irrep_for_rotation(R; N)

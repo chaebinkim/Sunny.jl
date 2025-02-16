@@ -28,7 +28,7 @@ function add_exchange_interactions!(sys, _)
 end
 
 function add_quadratic_interactions!(sys, mode)
-    if mode in (:dipole, :dipole_large_S)
+    if mode in (:dipole, :dipole_uncorrected)
         add_exchange_interactions!(sys, mode)
     else
         @assert mode == :SUN
@@ -36,8 +36,8 @@ function add_quadratic_interactions!(sys, mode)
 
         #=
         # This is a bit slower, but must also work
-        S = spin_label(sys, 1)
-        O = stevens_matrices(S)
+        s = spin_label(sys, 1)
+        O = stevens_matrices(s)
         Q = [O[2,q] for q in 2:-1:-2]
         Qi, Qj = to_product_space(Q, Q)
         biquad = [1.2  0   0  0    0
@@ -45,13 +45,13 @@ function add_quadratic_interactions!(sys, mode)
                     0  0 1.1  0 -1.4
                     0  0   0  1    0
                     0  0 1.4  0  1.3]
-        set_pair_coupling!(sys, 0.01(Qi'*biquad*Qj), Bond(1, 1, [0, 0, 1]))
+        set_pair_coupling!(sys, 0.01(Qi'*biquad*Qj), Bond(1, 2, [0, 0, 0]))
         =#
     end
 end
 
 function add_quartic_interactions!(sys, mode)
-    if mode in (:dipole, :dipole_large_S)
+    if mode in (:dipole, :dipole_uncorrected)
         # Stevens operators O[4,q] are quartic in dipoles
         i = 3
         O = stevens_matrices(spin_label(sys, i))

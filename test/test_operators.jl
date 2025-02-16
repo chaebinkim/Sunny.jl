@@ -6,22 +6,22 @@
 
     ### Verify 𝔰𝔲(2) irreps
     for N = 2:5
-        S₀ = (N-1)/2
-        S = spin_matrices(S₀)
+        s = (N-1)/2
+        S = spin_matrices(s)
 
         for i in 1:3, j in 1:3
             # Test commutation relations
             @test S[i]*S[j] - S[j]*S[i] ≈ im * sum(ϵ[i,j,k]*S[k] for k=1:3)
 
             # Test orthonormality
-            @test tr(S[i]*S[j]) ≈ (2/3)*S₀*(S₀+1/2)*(S₀+1) * (i==j)
+            @test tr(S[i]*S[j]) ≈ (2/3)*s*(s+1/2)*(s+1) * (i==j)
         end
 
         # Test magnitude
-        @test sum(S[i]^2 for i=1:3) ≈ S₀*(S₀+1)*I
+        @test sum(S[i]^2 for i=1:3) ≈ s*(s+1)*I
 
         # Test dipole -> ket -> dipole round trip
-        n = S₀ * normalize(randn(Sunny.Vec3))
+        n = s * normalize(randn(Sunny.Vec3))
         Z = Sunny.ket_from_dipole(n, Val(N))
         @test Sunny.expected_spin(Z) ≈ n
 
@@ -62,14 +62,14 @@ end
 
     # Spherical tensors satisfying `norm(T) = √tr T† T = 1` (currently unused).
     function spherical_tensors_normalized(k; N)
-        S = (N-1)/2
+        s = (N-1)/2
         ret = Matrix{Float64}[]
         for q in k:-1:-k
             T = zeros(Float64, N, N)
             for i = 1:N, i′ = 1:N
-                m  = S - i + 1
-                m′ = S - i′+ 1
-                T[i, i′] = clebschgordan(S, m′, k, q, S, m) * sqrt((2k+1)/N)
+                m  = s - i + 1
+                m′ = s - i′+ 1
+                T[i, i′] = clebschgordan(s, m′, k, q, s, m) * sqrt((2k+1)/N)
             end
             push!(ret, T)
         end
@@ -196,8 +196,8 @@ end
 
     # Test that spin matrices rotate as vectors
     let
-        for S₀ in (3, Inf)
-            S = spin_matrices(S₀)
+        for s in (3, Inf)
+            S = spin_matrices(s)
             for α in 1:3
                 @test (R * S)[α] ≈ rotate_operator(S[α], R)
             end
@@ -206,8 +206,8 @@ end
 
     # Test that Stevens quadrupoles rotate correctly
     let
-        for S₀ in (3, Inf)
-            O = stevens_matrices(S₀)
+        for s in (3, Inf)
+            O = stevens_matrices(s)
             
             # Cannot use [O[2, q] for q in 2:-1:-2] because:
             # https://github.com/JuliaAlgebra/DynamicPolynomials.jl/issues/149
@@ -330,11 +330,11 @@ end
     # Test Stevens coefficients extraction
     S = spin_matrices(Inf)
     O = stevens_matrices(Inf)
-    S_mag = π
+    S² = π
     p = S'*S * O[4, 2]
-    c = Sunny.operator_to_stevens_coefficients(p, S_mag)
+    c = Sunny.operator_to_stevens_coefficients(p, S²)
     @test iszero(c[1]) && iszero(c[2]) && iszero(c[3]) && iszero(c[5]) && iszero(c[6])
-    @test c[4] ≈ [0.0, 0.0, S_mag^2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    @test c[4] ≈ [0.0, 0.0, S², 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     # Test round trip Stevens -> spin -> Stevens
     c_ref = map(OffsetArrays.OffsetArray(0:6, 0:6)) do k

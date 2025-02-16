@@ -1,6 +1,24 @@
+"""
+    spiral_energy(sys::System; k, axis)
+
+Returns the energy of a generalized spiral phase associated with the propagation
+wavevector `k` (in reciprocal lattice units, RLU) and an `axis` vector that is
+normal to the polarization plane (in global Cartesian coordinates).
+
+When ``𝐤`` is incommensurate, this calculation can be viewed as creating an
+infinite number of periodic copies of `sys`. The spins on each periodic copy are
+rotated about the `axis` vector, with the angle ``θ = 2π 𝐤⋅𝐫``, where `𝐫`
+denotes the displacement vector between periodic copies of `sys` in multiples of
+the lattice vectors of the chemical cell.
+
+The return value is the energy associated with one periodic copy of `sys`. The
+special case ``𝐤 = 0`` yields result is identical to [`energy`](@ref).
+
+See also [`minimize_spiral_energy!`](@ref) and [`repeat_periodically_as_spiral`](@ref).
+"""
 function spiral_energy(sys::System{0}; k, axis)
-    sys.mode in (:dipole, :dipole_large_S) || error("SU(N) mode not supported")
-    sys.latsize == (1, 1, 1) || error("System must have only a single cell")
+    sys.mode in (:dipole, :dipole_uncorrected) || error("SU(N) mode not supported")
+    sys.dims == (1, 1, 1) || error("System must have only a single cell")
 
     check_rotational_symmetry(sys; axis, θ=0.01)
 
@@ -8,8 +26,14 @@ function spiral_energy(sys::System{0}; k, axis)
     return E
 end
 
+"""
+    spiral_energy_per_site(sys::System; k, axis)
+
+The [`spiral_energy`](@ref) divided by the number of sites in `sys`. The special
+case ``𝐤 = 0`` yields a result identical to [`energy_per_site`](@ref).
+"""
 function spiral_energy_per_site(sys::System{0}; k, axis)
-    return spiral_energy(sys; k, axis) / natoms(sys.crystal)
+    return spiral_energy(sys; k, axis) / nsites(sys)
 end
 
 function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
@@ -20,7 +44,7 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
     end
     dEdk = zero(Vec3)
 
-    @assert sys.latsize == (1,1,1)
+    @assert sys.dims == (1,1,1)
     Na = natoms(sys.crystal)
 
     x, y, z = normalize(axis)
@@ -130,8 +154,8 @@ dreg(x) = 2x * reg(x)^2
 function spiral_f(sys::System{0}, axis, params, λ)
     k = unpack_spiral_params!(sys, axis, params)
     E, _dEdk = spiral_energy_and_gradient_aux!(nothing, sys; k, axis)
-    for s in sys.dipoles
-        u = normalize(s)
+    for S in sys.dipoles
+        u = normalize(S)
         E += λ * reg(u⋅axis)
     end
     return E
@@ -143,33 +167,47 @@ function spiral_g!(G, sys::System{0}, axis, params, λ)
     G = reinterpret(Vec3, G)
 
     L = length(sys.dipoles)
-    dEds = view(G, 1:L)
-    _E, dEdk = spiral_energy_and_gradient_aux!(dEds, sys; k, axis)
+    dEdS = view(G, 1:L)
+    _E, dEdk = spiral_energy_and_gradient_aux!(dEdS, sys; k, axis)
 
     for i in 1:L
-        s = sys.dipoles[i]
-        u = normalize(s)
-        # dE/du' = dE/ds' * ds/du, where s = |s|*u.
-        dEdu = dEds[i] * norm(s) + λ * dreg(u⋅axis) * axis
+        S = sys.dipoles[i]
+        u = normalize(S)
+        # dE/du' = dE/dS' * dS/du, where S = |s|*u.
+        dEdu = dEdS[i] * norm(S) + λ * dreg(u⋅axis) * axis
         # dE/dv' = dE/du' * du/dv
         G[i] = vjp_stereographic_projection(dEdu, v[i], axis)
     end
     G[end] = dEdk
 end
 
-function minimize_energy_spiral!(sys, axis; maxiters=10_000, k_guess=randn(sys.rng, 3))
+"""
+    minimize_spiral_energy!(sys, axis; maxiters=10_000, k_guess=randn(sys.rng, 3))
+
+Finds a generalized spiral order that minimizes the [`spiral_energy`](@ref).
+This involves optimization of the spin configuration in `sys`, and the
+propagation wavevector ``𝐤``, which will be returned in reciprocal lattice
+units (RLU). The `axis` vector normal to the polarization plane cannot yet be
+optimized; it should be determined according to symmetry considerations and
+provided in global Cartesian coordinates. The initial `k_guess` will be random,
+unless otherwise provided.
+
+See also [`suggest_magnetic_supercell`](@ref) to find a system shape that is
+approximately commensurate with the returned propagation wavevector ``𝐤``.
+"""
+function minimize_spiral_energy!(sys, axis; maxiters=10_000, k_guess=randn(sys.rng, 3))
     axis = normalize(axis)
 
-    sys.mode in (:dipole, :dipole_large_S) || error("SU(N) mode not supported")
-    sys.latsize == (1, 1, 1) || error("System must have only a single cell")
-    norm([s × axis for s in sys.dipoles]) > 1e-12 || error("Spins cannot be exactly aligned with polarization axis")
+    sys.mode in (:dipole, :dipole_uncorrected) || error("SU(N) mode not supported")
+    sys.dims == (1, 1, 1) || error("System must have only a single cell")
+    norm([S × axis for S in sys.dipoles]) > 1e-12 || error("Spins cannot be exactly aligned with polarization axis")
 
     # Note: if k were fixed, we could check θ = 2πkᵅ for each component α, which
     # is a weaker constraint.
     check_rotational_symmetry(sys; axis, θ=0.01)
 
     L = natoms(sys.crystal)
-    
+
     params = fill(zero(Vec3), L+1)
     for i in 1:L
         params[i] = inverse_stereographic_projection(normalize(sys.dipoles[i]), axis)
@@ -180,8 +218,9 @@ function minimize_energy_spiral!(sys, axis; maxiters=10_000, k_guess=randn(sys.r
     f(params) = spiral_f(sys, axis, params, λ)
     g!(G, params) = spiral_g!(G, sys, axis, params, λ)
 
-    # Minimize f, the energy of a spiral
-    options = Optim.Options(; iterations=maxiters)
+    # Minimize f, the energy of a spiral. See comment in `minimize_energy!` for
+    # a discussion of the tolerance settings.
+    options = Optim.Options(; iterations=maxiters, x_tol=1e-12, g_tol=0, f_reltol=NaN, f_abstol=NaN)
 
     # LBFGS does not converge to high precision, but ConjugateGradient can fail
     # to converge: https://github.com/JuliaNLSolvers/LineSearches.jl/issues/175.

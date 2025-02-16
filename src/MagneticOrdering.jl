@@ -13,13 +13,13 @@ this function will typically be used as input to
 
 Because this function does not incorporate phase information in its averaging
 over sublattices, the printed weights are not directly comparable with
-experiment. For that purpose, use [`instant_correlations`](@ref) instead.
+experiment. For that purpose, use [`SampledCorrelationsStatic`](@ref) instead.
 """
 function print_wrapped_intensities(sys::System{N}; nmax=10) where N
     sys.crystal == orig_crystal(sys) || error("Cannot perform this analysis on reshaped system.")
 
     s = reinterpret(reshape, Float64, sys.dipoles)
-    V = prod(sys.latsize) # number of spins in sublattice
+    V = prod(sys.dims) # number of spins in sublattice
     cell_dims = (2,3,4)
     sk = FFTW.fft(s, cell_dims) / √V
     Sk = real.(conj.(sk) .* sk)
@@ -32,8 +32,8 @@ function print_wrapped_intensities(sys::System{N}; nmax=10) where N
     p = sortperm(-weight[:])
 
     println("Dominant wavevectors for spin sublattices:\n")
-    for (i, m) in enumerate(CartesianIndices(sys.latsize)[p])
-        k = (Tuple(m) .- 1) ./ sys.latsize
+    for (i, m) in enumerate(CartesianIndices(sys.dims)[p])
+        k = (Tuple(m) .- 1) ./ sys.dims
         k = [ki > 1/2 ? ki-1 : ki for ki in k]
 
         kstr = fractional_vec3_to_string(k)
@@ -61,7 +61,7 @@ function rationalize_simultaneously(xs; tol, maxsize)
         numers = @. round(Int, xs * denom)
         errs = @. xs - numers / denom
         if all(e -> abs(e) < tol, errs)
-            return numers, denom
+            return numers .// denom
         end
     end
     error("Wavevectors are incommensurate for lattice sizes less than $maxsize. Try increasing `tol` parameter.")
@@ -100,23 +100,27 @@ suggest_magnetic_supercell([[0, 0, 1/√5], [0, 0, 1/√7]]; tol=1e-2)
 ```
 """
 function suggest_magnetic_supercell(ks; tol=1e-12, maxsize=100)
-    new_ks = zeros(Rational{Int}, 3, length(ks))
+    eltype(ks) <: AbstractVector{<: Number} || error("Pass a list of wavevectors")
 
+    rational_ks = zeros(Rational{Int}, 3, length(ks))
     for i in 1:3
         xs = [k[i] for k in ks]
-        numers, denom = rationalize_simultaneously(xs; tol, maxsize)
-        new_ks[i, :] = numers .// denom
+        rational_ks[i, :] = rationalize_simultaneously(xs; tol, maxsize)
     end
 
-    suggest_magnetic_supercell_aux(eachcol(new_ks))
+    suggest_magnetic_supercell_aux(eachcol(rational_ks))
 end
 
 function suggest_magnetic_supercell_aux(ks)
-    denoms = denominator.(first(ks))
+    # A supercell of shape A = diagm(nmax) is guaranteed to be commensurate
+    nmax = [lcm(denominator.(row)...) for row in zip(ks...)]
+    ns = Vec3.(eachcol(diagm(nmax)))
 
-    # All possible periodic offsets, sorted by length
-    nmax = div.(denoms, 2)
-    ns = [[n1, n2, n3] for n1 in -nmax[1]:nmax[1], n2 in -nmax[2]:nmax[2], n3 in -nmax[3]:nmax[3]][:]
+    # Candidate lattice vectors for a smaller supercell
+    rg = div.(nmax, 2)
+    append!(ns, Vec3.(Iterators.product(-rg[1]:rg[1], -rg[2]:rg[2], -rg[3]:rg[3])))
+
+    # Sort by length
     sort!(ns, by=n->n'*n)
 
     # Remove zero vector
@@ -125,18 +129,12 @@ function suggest_magnetic_supercell_aux(ks)
 
     # Filter out elements of ns that are not consistent with k ∈ ks
     for k in ks
-        ns = filter(ns) do n            
+        ns = filter(ns) do n
             # Wave vector `k` in RLU is commensurate if `n⋅k` is integer,
             # corresponding to the condition `exp(-i 2π n⋅k) = 1`.
             isinteger(n⋅k)
         end
     end
-
-    # Add vectors that wrap the entire lattice to ensure that a subset of the ns
-    # span a nonzero volume.
-    push!(ns, [denoms[1], 0, 0])
-    push!(ns, [0, denoms[2], 0])
-    push!(ns, [0, 0, denoms[3]])
 
     # Goodness of supervectors A1, A2, A3. Lower is better.
     function score(A)
@@ -150,15 +148,8 @@ function suggest_magnetic_supercell_aux(ks)
         V <= 0 ? Inf : V - 1e-3*c1 - 1e-6c2
     end
 
-    # Find three vectors that span a nonzero volume which is hopefully small.
-    # This will be our initial guess for the supercell.
-    i1 = 1
-    A1 = ns[i1]
-    i2 = findfirst(n -> !iszero(n×A1), ns[i1+1:end])::Int
-    A2 = ns[i1+i2]
-    i3 = findfirst(n -> !iszero(n⋅(A1×A2)), ns[i1+i2+1:end])::Int
-    A3 = ns[i1+i2+i3]
-    best_A = [A1 A2 A3]
+    # Initial guess for the supercell
+    best_A = diagm(nmax)
     best_score = score(best_A)
 
     # Iteratively search for an improved supercell. For efficiency, restrict the
@@ -194,16 +185,8 @@ function suggest_magnetic_supercell_aux(ks)
     end
 
     # # Alternative brute force implementation, for reference
-    # push!(ns, [denoms[1],0,0])
-    # push!(ns, [0,denoms[2],0])
-    # push!(ns, [0,0,denoms[3]])
-    # for A1 in ns, A2 in ns, A3 in ns
-    #     A = [A1 A2 A3]
-    #     if best_score > score(A)
-    #         best_score = score(A)
-    #         best_A = A
-    #     end
-    # end
+    # all_As = ([A1 A2 A3] for (A1, A2, A3) in Iterators.product(ns, ns, ns))
+    # @assert minimum(score, all_As) == best_score
 
     kstrs = join(map(fractional_vec3_to_string, ks), ", ")
     println("""Possible magnetic supercell in multiples of lattice vectors:
@@ -221,7 +204,7 @@ function check_commensurate(sys; k)
     commensurate = true
     for i = 1:3
         denom = denominator(rationalize(q_reshaped[i]))
-        commensurate = commensurate && iszero(mod(sys.latsize[i], denom))
+        commensurate = commensurate && iszero(mod(sys.dims[i], denom))
     end
     if !commensurate
         @warn "Wavevector $(fractional_vec3_to_string(k)) is incommensurate with system."
@@ -238,70 +221,3 @@ function deprecate_small_q(; q, k)
     return k
 end
 
-"""
-    set_spiral_order!(sys; k, axis, S0)
-
-Initializes the system with a spiral order described by the wavevector `k`, an
-axis of rotation `axis`, and an initial dipole direction `S0` at the real-space
-origin. The wavevector is expected in repicrocal lattice units (RLU), while the
-direction vectors `axis` and `S0` are expected in global Cartesian coordinates.
-
-# Example
-
-```julia
-# Spiral order for a wavevector propagating in the direction of the first
-# reciprocal lattice vector (i.e., orthogonal to the lattice vectors ``𝐚_2``
-# and ``𝐚_3``), repeating with a period of 3 lattice constants, and spiraling
-# about the ``ẑ``-axis. The spin at the origin will point in the direction
-# ``𝐒_0 = ŷ + ẑ``.  Here, ``(x̂, ŷ, ẑ)`` are the axes of Cartesian coordinate
-# system in the global frame.
-set_spiral_order!(sys; k=[1/3, 0, 0], axis=[0, 0, 1], S0=[0, 1, 1])
-```
-
-See also [`set_spiral_order_on_sublattice!`](@ref).
-"""
-function set_spiral_order!(sys; q=nothing, k=nothing, axis, S0)
-    k = deprecate_small_q(; q, k)
-
-    check_commensurate(sys; k)
-    q_absolute = orig_crystal(sys).recipvecs * k
-
-    for site in eachsite(sys)
-        r = global_position(sys, site)
-        θ = q_absolute ⋅ r
-        set_dipole!(sys, axis_angle_to_matrix(axis, θ) * S0, site)
-    end
-end
-
-
-"""
-    set_spiral_order_on_sublattice!(sys, i; k, axis, S0)
-
-Initializes sublattice `i` with a spiral order described by the wavevector `k`,
-an axis of rotation `axis`, and an initial dipole direction `S0`. The phase is
-selected such that the spin at `sys.dipole[1,1,1,i]` will point in the direction
-of `S0`. The wavevector is expected in repicrocal lattice units (RLU), while the
-direction vectors `axis` and `S0` are expected in global Cartesian coordinates.
-
-This function is not available for systems with reshaped unit cells.
-
-See also [`set_spiral_order!`](@ref).
-"""
-function set_spiral_order_on_sublattice!(sys, i; q=nothing, k=nothing, axis, S0)
-    k = deprecate_small_q(; q, k)
-
-    if orig_crystal(sys) != sys.crystal
-        error("Cannot operate on a reshaped crystal. Atom indices may have changed.")
-    end
-
-    check_commensurate(sys; k)
-    q_absolute = orig_crystal(sys).recipvecs * k
-
-    r0 = global_position(sys, (1, 1, 1, i))
-    for cell in eachcell(sys)
-        site = (Tuple(cell)..., i)
-        r = global_position(sys, site)
-        θ = q_absolute ⋅ (r - r0)
-        set_dipole!(sys, axis_angle_to_matrix(axis, θ) * S0, site)
-    end
-end

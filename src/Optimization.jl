@@ -4,7 +4,7 @@
 # normalized. When `α=0`, the output is `u=n`, and when `|α|→ ∞` the output is
 # `u=-n`. In all cases, `|u|=1`.
 function stereographic_projection(α, n)
-    @assert n'*n ≈ 1
+    @assert n'*n ≈ 1 || all(isnan, n)
 
     v = α - n*(n'*α)              # project out component parallel to `n`
     v² = real(v'*v)
@@ -30,7 +30,9 @@ end
 # Using the above definitions, return:
 #   x̄ du/dα = x̄ du/dv P
 #
-@inline function vjp_stereographic_projection(x, α, n)
+@inline function vjp_stereographic_projection(x̄, α, n)
+    all(isnan, n) && return zero(n') # No gradient when α is fixed to zero
+
     @assert n'*n ≈ 1
 
     v = α - n*(n'*α)
@@ -38,13 +40,15 @@ end
     b = (1-v²)/2
     c = 2/(1+v²)
     # Perform dot products first to avoid constructing outer-product
-    x̄_dudv = c*x' - c * (x' * ((1+c*b)*n + c*v)) * v'
+    x̄_dudv = c*x̄' - c * (x̄' * ((1+c*b)*n + c*v)) * v'
     # Apply projection P=1-nn̄ on right
     return x̄_dudv - (x̄_dudv * n) * n'
 end
 
 # Returns v such that u = (2v + (1-v²)n)/(1+v²) and v⋅n = 0
 function inverse_stereographic_projection(u, n)
+    all(isnan, n) && return zero(n) # NaN values denote α = v = zero
+
     @assert u'*u ≈ 1
 
     uperp = u - n*(n'*u)
@@ -75,8 +79,8 @@ end
 
 function optim_set_gradient!(G, sys::System{0}, αs, ns)
     (αs, G) = reinterpret.(reshape, Vec3, (αs, G))
-    set_energy_grad_dipoles!(G, sys.dipoles, sys)            # G = dE/ds
-    @. G *= norm(sys.dipoles)                                # G = dE/ds * ds/du = dE/du
+    set_energy_grad_dipoles!(G, sys.dipoles, sys)            # G = dE/dS
+    @. G *= norm(sys.dipoles)                                # G = dE/dS * ds/du = dE/du
     @. G = adjoint(vjp_stereographic_projection(G, αs, ns))  # G = dE/du du/dα = dE/dα
 end
 function optim_set_gradient!(G, sys::System{N}, αs, ns) where N
@@ -89,15 +93,16 @@ end
 
 """
     minimize_energy!(sys::System{N}; maxiters=1000, method=Optim.ConjugateGradient(),
-                     g_tol=1e-10, kwargs...) where N
+                     kwargs...) where N
 
 Optimizes the spin configuration in `sys` to minimize energy. A total of
-`maxiters` iterations will be attempted. Convergence is reached when the root
-mean squared energy gradient goes below `g_tol`. The remaining `kwargs` will be
-forwarded to the `optimize` method of the Optim.jl package.
+`maxiters` iterations will be attempted. The `method` parameter will be used in
+the `optimize` function of the [Optim.jl
+package](https://github.com/JuliaNLSolvers/Optim.jl). Any remaining `kwargs`
+will be included in the `Options` constructor of Optim.jl.
 """
 function minimize_energy!(sys::System{N}; maxiters=1000, subiters=10, method=Optim.ConjugateGradient(),
-                          g_tol=1e-10, kwargs...) where N
+                          kwargs...) where N
     # Allocate buffers for optimization:
     #   - Each `ns[site]` defines a direction for stereographic projection.
     #   - Each `αs[:,site]` will be optimized in the space orthogonal to `ns[site]`.
@@ -119,18 +124,19 @@ function minimize_energy!(sys::System{N}; maxiters=1000, subiters=10, method=Opt
         optim_set_gradient!(G, sys, αs, ns)
     end
 
-    # Monitor energy gradient magnitude relative to absolute tolerance `g_tol`.
-    g_res = Inf
-
-    # Repeatedly optimize using a small number (`subiters`) of steps.
-    options = Optim.Options(; iterations=subiters, g_tol, kwargs...)
+    # Repeatedly optimize using a small number (`subiters`) of steps. See
+    # https://github.com/JuliaNLSolvers/Optim.jl/issues/1120 for discussion of
+    # settings required to find the minimizer `x` to high-accuracy. Note that
+    # `x` contains normalized spin variables, while gradient `g` has dimensions
+    # of energy, so we elect to set `x_tol` as the dimensionless convergence
+    # tolerance.
+    options = Optim.Options(; iterations=subiters, x_tol=1e-12, g_tol=0, f_reltol=NaN, f_abstol=NaN, kwargs...)
+    local output
     for iter in 1 : div(maxiters, subiters, RoundUp)
         output = Optim.optimize(f, g!, αs, method, options)
-        g_res = Optim.g_residual(output)
-        @assert g_tol == Optim.g_tol(output)
 
         # Exit if converged
-        if g_res ≤ g_tol
+        if Optim.converged(output)
             cnt = (iter-1)*subiters + output.iterations
             return cnt
         end
@@ -140,9 +146,7 @@ function minimize_energy!(sys::System{N}; maxiters=1000, subiters=10, method=Opt
         αs .*= 0
     end
 
-    res_str = number_to_simple_string(g_res; digits=2)
-    tol_str = number_to_simple_string(g_tol; digits=2)
-
-    @warn "Optimization failed to converge within $maxiters iterations ($res_str ≰ $tol_str)"
+    f_abschange, x_abschange, g_residual = number_to_simple_string.((Optim.f_abschange(output), Optim.x_abschange(output), Optim.g_residual(output)); digits=2)
+    @warn "Non-converged after $maxiters iterations: |ΔE|=$f_abschange, |Δx|=$x_abschange, |∂E/∂x|=$g_residual"
     return -1
 end

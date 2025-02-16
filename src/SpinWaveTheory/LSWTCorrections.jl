@@ -21,23 +21,17 @@ function energy_per_site_lswt_correction(swt::SpinWaveTheory; opts...)
     H = zeros(ComplexF64, 2L, 2L)
     V = zeros(ComplexF64, 2L, 2L)
 
-    if sys.mode == :SUN
-        hamiltonian_function! = swt_hamiltonian_SUN!
-    else
-        @assert sys.mode in (:dipole, :dipole_large_S)
-        hamiltonian_function! = swt_hamiltonian_dipole!
-    end
-
     # The uniform correction to the classical energy (trace of the (1,1)-block
     # of the spin-wave Hamiltonian)
-    hamiltonian_function!(H, swt, zero(Vec3))
-    δE₁ = -real(tr(view(H, 1:L, 1:L))) / Natoms
+    dynamical_matrix!(H, swt, zero(Vec3))
+    δE₁ = -real(tr(view(H, 1:L, 1:L))) / 2Natoms
 
-    # Integrate zero-point energy over the first magnetic Brillouin zone 𝐪 ∈ [0, 1]³ (in RLU)
-    δE₂ = hcubature((0,0,0), (1,1,1); opts...) do q
-        hamiltonian_function!(H, swt, q)
+    # Integrate zero-point energy over the first Brillouin zone 𝐪 ∈ [0, 1]³ for
+    # magnetic cell in reshaped RLU
+    δE₂ = hcubature((0,0,0), (1,1,1); opts...) do q_reshaped
+        dynamical_matrix!(H, swt, q_reshaped)
         ωs = bogoliubov!(V, H)
-        return sum(ωs) / 2Natoms
+        return sum(view(ωs, 1:L)) / 2Natoms
     end
 
     # Error bars in δE₂[2] are discarded
@@ -61,7 +55,7 @@ function magnetization_lswt_correction_sun(swt::SpinWaveTheory; opts...)
     O = zeros(ComplexF64, N, N, Natoms)
     for i in 1:Natoms
         n = normalize(swt.sys.dipoles[i])
-        U = view(data.local_unitaries, :, :, i)
+        U = data.local_unitaries[i]
         O[:, :, i] += U' * (n' * S) * U
         @assert O[N, N, i] ≈ norm(swt.sys.dipoles[i])
     end
@@ -102,11 +96,11 @@ end
 """
     magnetization_lswt_correction(swt::SpinWaveTheory; opts...)
 
-Calculates the reduction in the classical magnetization given a
-[`SpinWaveTheory`](@ref) from LSWT for all atoms in the magnetic cell. In the
-case of `:dipole` and `:dipole_large_S` mode, the classical magnetization is
-always maximized to spin size `S`. While in `:SUN` mode, the classical
-magnetization can be smaller than `S` due to anisotropic interactions.
+Calculates the reduction in the classical dipole magnitude for all atoms in the
+magnetic cell. In the case of `:dipole` and `:dipole_uncorrected` mode, the
+classical dipole magnitude is constrained to spin-`s`. While in `:SUN` mode, the
+classical dipole magnitude can be smaller than `s` due to anisotropic
+interactions.
 
 A keyword argument `rtol`, `atol`, or `maxevals` is required to control the
 accuracy of momentum-space integration. See the HCubature package documentation
@@ -119,7 +113,7 @@ function magnetization_lswt_correction(swt::SpinWaveTheory; opts...)
     if sys.mode == :SUN
         δS = magnetization_lswt_correction_sun(swt; opts...)
     else
-        @assert sys.mode in (:dipole, :dipole_large_S)
+        @assert sys.mode in (:dipole, :dipole_uncorrected)
         δS = magnetization_lswt_correction_dipole(swt; opts...)
     end
     return δS

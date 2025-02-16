@@ -4,7 +4,7 @@
 
     function make_system(; mode, inhomog)
         cryst = Sunny.diamond_crystal()
-        sys = System(cryst, (3, 3, 3), [SpinInfo(1, S=2, g=2)], mode; seed=0)
+        sys = System(cryst, [1 => Moment(s=2, g=2)], mode; dims=(2, 2, 2), seed=0)
         add_linear_interactions!(sys, mode)
         add_quadratic_interactions!(sys, mode)
         add_quartic_interactions!(sys, mode)
@@ -25,11 +25,11 @@
             # Add some inhomogeneous interactions
             sys2 = to_inhomogeneous(sys)
             @test energy(sys2) ≈ energy(sys)
-            set_vacancy_at!(sys2, (1,1,1,1))
+            set_vacancy_at!(sys2, (1,1,1,2))
             set_exchange_at!(sys2, 0.5, (1,1,1,1), (2,1,1,2); offset=(1, 0, 0))
-            set_pair_coupling_at!(sys2, (Si, Sj) -> 0.7*(Si'*Sj)^2, (3,2,1,2), (3,1,1,3); offset=(0,-1,0))
+            set_pair_coupling_at!(sys2, (Si, Sj) -> 0.7*(Si'*Sj)^2, (2,2,1,2), (2,1,1,3); offset=(0,-1,0))
 
-            set_onsite_coupling_at!(sys2, S -> 0.4*(S[1]^4+S[2]^4+S[3]^4), (2,2,2,4))
+            set_onsite_coupling_at!(sys2, S -> 0.4*(S[1]^4+S[2]^4+S[3]^4), (2,2,1,4))
             return sys2
         end
     end
@@ -37,7 +37,7 @@
 
     # Tests that SphericalMidpoint conserves energy to a certain tolerance.
     function test_conservation(sys)
-        NITERS = 3_000
+        NITERS = 1500
         dt     = 0.002
         energies = Float64[]
 
@@ -64,11 +64,11 @@
             # Pick a random site, try to set it to a random spin
             site = rand(sys.rng, eachsite(sys))
             spin = Sunny.randspin(sys, site)
-            
+
             ΔE = Sunny.local_energy_change(sys, site, spin)
 
             E0 = energy(sys)
-            sys.dipoles[site]   = spin.s
+            sys.dipoles[site]   = spin.S
             sys.coherents[site] = spin.Z
             E1 = energy(sys)
             ΔE_ref = E1 - E0

@@ -5,7 +5,7 @@ Load the magnetic supercell according to an mCIF file. System `sys` must already
 be resized to the correct supercell dimensions.
 """
 function set_dipoles_from_mcif!(sys::System, filename::AbstractString)
-    cif = CIF.Cif(Path(filename))
+    cif = CIF.Cif(filename)
     # For now, assumes there is only one data collection per .cif
     cif = cif[first(keys(cif))]
 
@@ -15,7 +15,7 @@ function set_dipoles_from_mcif!(sys::System, filename::AbstractString)
     α = parse_cif_float(cif["_cell_angle_alpha"][1])
     β = parse_cif_float(cif["_cell_angle_beta"][1])
     γ = parse_cif_float(cif["_cell_angle_gamma"][1])
-    supervecs = sys.crystal.latvecs .* sys.latsize
+    supervecs = sys.crystal.latvecs .* sys.dims
     supervecs2 = lattice_vectors(a, b, c, α, β, γ)
 
     # TODO: Tolerance to permutations (with sign flips) of lattice vectors
@@ -23,12 +23,14 @@ function set_dipoles_from_mcif!(sys::System, filename::AbstractString)
         tol = 0.1 * sys.crystal.symprec # Tolerance might need tuning
         orig_cryst = orig_crystal(sys)
 
-        primvecs = @something orig_cryst.prim_latvecs orig_cryst.latvecs
+        primcell = @something primitive_cell(orig_cryst) Mat3(I)
+        primvecs = orig_cryst.latvecs * primcell
 
         suggestion = if all(isinteger.(rationalize.(primvecs \ supervecs2; tol)))
             suggested_shape = rationalize.(orig_cryst.latvecs \ supervecs2; tol)
             suggestion = if isdiag(suggested_shape)
-                sz = fractional_vec3_to_string(diag(suggested_shape))
+                diag_strs = number_to_math_string.(diag(suggested_shape))
+                sz = "("*join(diag_strs, ", ")*")"
                 error("Use `resize_supercell(sys, $sz)` to get compatible system")
             else
                 shp = fractional_mat3_to_string(suggested_shape)
@@ -83,7 +85,7 @@ end
 # vectors of the supercell. Similarly, the symmetry operations act in this
 # coordinate system.
 function set_dipoles_from_mcif_aux!(sys; positions, moments, magn_operations, magn_centerings)
-    supervecs = sys.crystal.latvecs .* sys.latsize
+    supervecs = sys.crystal.latvecs .* sys.dims
     
     # Use the zero vector as a marker for unvisited sites
     fill!(sys.dipoles, zero(Vec3))

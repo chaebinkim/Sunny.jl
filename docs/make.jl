@@ -1,5 +1,6 @@
-# To build docs, execute `julia --project=@. make.jl`. The JuliaHub build
-# environment additionally uses `--compiled-modules=no`.
+#=
+julia --project=@. --compiled-modules=existing make.jl
+=#
 
 isdraft = false # set `true` to disable cell evaluation
 
@@ -30,14 +31,15 @@ function build_examples(example_sources, destdir)
     for source in example_sources
         # Extract "example" from "path/example.jl"
         name = splitext(basename(source))[1]
-        
+
         # Preprocess each example by adding a notebook download link at the top. The
         # relative path is hardcoded according to the layout of `gh-pages` branch,
         # which is set up by `Documenter.deploydocs`.
         function preprocess(str)
             """
-            # Download this example as [Jupyter notebook]($assetsdir/notebooks/$name.ipynb) or [Julia script]($assetsdir/scripts/$name.jl).
+            # Download this example as [Julia file]($assetsdir/scripts/$name.jl) or [Jupyter notebook]($assetsdir/notebooks/$name.ipynb).
 
+            import Random; Random.seed!(0); #hide
             """ * str
         end
         # Write to `src/$destpath/$name.md`
@@ -47,20 +49,25 @@ function build_examples(example_sources, destdir)
     # Create Jupyter notebooks and Julia script for each Literate example. These
     # will be stored in the `assets/` directory of the hosted docs.
     for source in example_sources
-        function preprocess(str)
+        function pp_vcheck(str)
+            check = "@assert pkgversion(Sunny) >= " * repr(pkgversion(Sunny))
+            return replace(str, r"^(using.*Sunny.*)$"m => SubstitutionString("\\1\n"*check))
+        end
+        function pp_wglmakie(str)
             # Ideally, notebooks would use WGLMakie instead of GLMakie, but
             # there are currently too many bugs to enable by default:
             # https://github.com/SunnySuite/Sunny.jl/issues/211
             #=
-            str = replace(str, r"^using(.*?)GLMakie"m => s"using\1WGLMakie")
+            return replace(str, r"^using(.*?)GLMakie"m => s"using\1WGLMakie")
             =#
-            str
+            return str
         end
+
         # Build notebooks
-        Literate.notebook(source, notebooks_path; preprocess, execute=false, credit=false)
+        Literate.notebook(source, notebooks_path; preprocess=pp_wglmakie∘pp_vcheck, execute=false, credit=false)
 
         # Build julia scripts
-        Literate.script(source, scripts_path; credit=false)
+        Literate.script(source, scripts_path; preprocess=pp_vcheck, credit=false)
     end
 
     # Return paths `$destpath/$name.md` for each new Markdown file (relative to
@@ -109,23 +116,22 @@ contributed_mds = isdraft ? [] : prepare_contributed()
 # Build docs as HTML, including the `examples/name.md` markdown built above
 Documenter.makedocs(;
     clean = false, # Don't wipe files in `build/assets/`
-    sitename = "Sunny documentation",
+    sitename = "Documentation",
     pages = [
         "index.md",
+        "why.md",
         "Examples" => [
             example_mds...,
-            "SpinW tutorials" => spinw_mds,
+            "SpinW ports" => spinw_mds,
             "Contributed" => contributed_mds,
-            "Advanced" => [
-                "parallelism.md",                        
-                "writevtk.md",
-            ],
-        ],
-        "Modeling Guides" => [
-            "structure-factor.md",
-            "renormalization.md",
         ],
         "library.md",
+        "Notes and Details" => [
+            "structure-factor.md",
+            "renormalization.md",
+            "parallelism.md",
+            # "writevtk.md",
+        ],
         "versions.md",
     ],
     format = Documenter.HTML(;

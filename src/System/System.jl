@@ -1,36 +1,47 @@
 """
-    System(crystal::Crystal, latsize, infos, mode; seed::Int)
+    System(crystal::Crystal, moments, mode; dims=(1, 1, 1), seed=nothing)
 
-Construct a `System` of spins for a given [`Crystal`](@ref) symmetry. The
-`latsize` parameter determines the number of unit cells in each lattice vector
-direction. The `infos` parameter is a list of [`SpinInfo`](@ref) objects, one
-for each symmetry-inequivalent sublattice.
+A spin system is constructed from the [`Crystal`](@ref) unit cell, a
+specification of the spin `moments` symmetry-distinct sites, and a calculation
+`mode`. Interactions can be added to the system using, e.g.,
+[`set_exchange!`](@ref). The default supercell dimensions are 1×1×1 chemical
+cells, but this can be changed with `dims`.
+
+Spin `moments` comprise a list of pairs, `[i1 => Moment(...), i2 => ...]`, where
+`i1, i2, ...` are a complete set of symmetry-distinct atoms. Each
+[`Moment`](@ref) contains spin and ``g``-factor information.
 
 The two primary options for `mode` are `:SUN` and `:dipole`. In the former, each
-spin-``S`` degree of freedom is described as an SU(_N_) coherent state, i.e. a
-quantum superposition of ``N = 2S + 1`` levels. This formalism can be useful to
+spin-``s`` degree of freedom is described as an SU(_N_) coherent state, i.e. a
+quantum superposition of ``N = 2s + 1`` levels. This formalism can be useful to
 capture multipolar spin fluctuations or local entanglement effects. 
 
 Mode `:dipole` projects the SU(_N_) dynamics onto the restricted space of pure
 dipoles. In practice this means that Sunny will simulate Landau-Lifshitz
 dynamics, but single-ion anisotropy and biquadratic exchange interactions will
 be renormalized to improve accuracy. To disable this renormalization, use the
-mode `:dipole_large_S` which applies the ``S → ∞`` classical limit. For details,
-see the documentation page: [Interaction Strength Renormalization](@ref).
+mode `:dipole_uncorrected`, which corresponds to the formal ``s → ∞`` limit. For
+details, see the documentation page: [Interaction Renormalization](@ref).
 
-An optional `seed` may be provided to achieve reproducible random number
-generation.
+Stochastic operations on this system can be made reproducible by selecting a
+`seed` for this system's pseudo-random number generator. The default system seed
+will be generated from Julia's task-local RNG, which can itself be seeded using
+`Random.seed!`.
 
-All spins are initially polarized in the ``z``-direction.
+All spins are initially polarized in the global ``z``-direction.
 """
-function System(crystal::Crystal, latsize::NTuple{3,Int}, infos::Vector{SpinInfo}, mode::Symbol;
-                seed=nothing, units=nothing)
+function System(crystal::Crystal, moments::Vector{Pair{Int, Moment}}, mode::Symbol;
+                dims::NTuple{3,Int}=(1, 1, 1), seed=nothing, units=nothing)
     if !isnothing(units)
         @warn "units argument to System is deprecated and will be ignored!"
     end
-    
-    if !in(mode, (:SUN, :dipole, :dipole_large_S))
-        error("Mode must be `:SUN`, `:dipole`, or `:dipole_large_S`.")
+    if mode in (:dipole_large_S, :dipole_large_s)
+        @warn "Deprecation warning! Use :dipole_uncorrected instead of $mode"
+        mode = :dipole_uncorrected
+    end
+
+    if !in(mode, (:SUN, :dipole, :dipole_uncorrected))
+        error("Mode must be `:SUN`, `:dipole`, or `:dipole_uncorrected`.")
     end
 
     # The lattice vectors of `crystal` must be conventional (`crystal` cannot be
@@ -38,12 +49,12 @@ function System(crystal::Crystal, latsize::NTuple{3,Int}, infos::Vector{SpinInfo
     if !isnothing(crystal.root)
         @assert crystal.latvecs == crystal.root.latvecs
     end
-    
+
     na = natoms(crystal)
 
-    infos = propagate_site_info(crystal, infos)
-    Ss = [si.S for si in infos]
-    gs = [si.g for si in infos]
+    moments = propagate_moments(crystal, moments)
+    Ss = [m.s for m in moments]
+    gs = [m.g for m in moments]
 
     # TODO: Label SU(2) rep instead
     Ns = @. Int(2Ss+1)
@@ -52,32 +63,30 @@ function System(crystal::Crystal, latsize::NTuple{3,Int}, infos::Vector{SpinInfo
         allequal(Ns) || error("Currently all spins S must be equal in SU(N) mode.")
         N = first(Ns)
         κs = fill(1.0, na)
-    elseif mode in (:dipole, :dipole_large_S)
+    elseif mode in (:dipole, :dipole_uncorrected)
         N = 0 # marker for :dipole mode
         κs = copy(Ss)
     end
 
-    # Repeat such that `A[:]` → `A[cell, :]` for every `cell`
-    repeat_to_lattice(A) = permutedims(repeat(A, 1, latsize...), (2, 3, 4, 1))
-
-    Ns = repeat_to_lattice(Ns)
-    κs = repeat_to_lattice(κs)
-    gs = repeat_to_lattice(gs)
+    Ns = reshape(Ns, 1, 1, 1, :)
+    κs = reshape(κs, 1, 1, 1, :)
+    gs = reshape(gs, 1, 1, 1, :)
 
     interactions = empty_interactions(mode, na, N)
     ewald = nothing
 
-    extfield = zeros(Vec3, latsize..., na)
-    dipoles = fill(zero(Vec3), latsize..., na)
-    coherents = fill(zero(CVec{N}), latsize..., na)
+    extfield = zeros(Vec3, 1, 1, 1, na)
+    dipoles = fill(zero(Vec3), 1, 1, 1, na)
+    coherents = fill(zero(CVec{N}), 1, 1, 1, na)
     dipole_buffers = Array{Vec3, 4}[]
     coherent_buffers = Array{CVec{N}, 4}[]
-    rng = isnothing(seed) ? Random.Xoshiro() : Random.Xoshiro(seed)
 
-    ret = System(nothing, mode, crystal, latsize, Ns, κs, gs, interactions, ewald,
+    rng = isnothing(seed) ? Random.Xoshiro(rand(UInt64, 4)...) : Random.Xoshiro(seed)
+
+    ret = System(nothing, mode, crystal, (1, 1, 1), Ns, κs, gs, interactions, ewald,
                  extfield, dipoles, coherents, dipole_buffers, coherent_buffers, rng)
     polarize_spins!(ret, (0,0,1))
-    return ret
+    return dims == (1, 1, 1) ? ret : repeat_periodically(ret, dims)
 end
 
 function mode_to_str(sys::System{N}) where N
@@ -85,16 +94,15 @@ function mode_to_str(sys::System{N}) where N
         return "[SU($N)]"
     elseif sys.mode == :dipole
         return "[Dipole mode]"
-    elseif sys.mode == :dipole_large_S
-        return "[Dipole mode, large-S]"
+    elseif sys.mode == :dipole_uncorrected
+        return "[Dipole mode, large-s]"
     else
         error()
     end
 end
 
-function lattice_to_str(sys::System)
-    lat_str = isnothing(sys.origin) ? "Lattice" : "Reshaped lattice"
-    return lat_str * " ($(join(sys.latsize, "×")))×$(natoms(sys.crystal))"
+function supercell_to_str(dims, cryst)
+    return "Supercell (" * join(dims, "×") * ")×" * string(natoms(cryst))
 end
 
 function energy_to_str(sys::System)
@@ -106,13 +114,13 @@ function energy_to_str(sys::System)
 end
 
 function Base.show(io::IO, sys::System{N}) where N
-    print(io, "System($(mode_to_str(sys)), $(lattice_to_str(sys)), $(energy_to_str(sys)))")
+    print(io, "System($(mode_to_str(sys)), $(supercell_to_str(sys.dims, sys.crystal)), $(energy_to_str(sys)))")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", sys::System{N}) where N
     printstyled(io, "System $(mode_to_str(sys))\n"; bold=true, color=:underline)
-    println(io, lattice_to_str(sys))
-    if !isnothing(sys.origin)
+    println(io, supercell_to_str(sys.dims, sys.crystal))
+    if !isnothing(sys.origin) && cell_shape(sys) != cell_shape(sys.origin)
         shape = number_to_math_string.(cell_shape(sys))
         println(io, formatted_matrix(shape; prefix="Reshaped cell "))
     end
@@ -133,7 +141,7 @@ Creates a full clone of the system, such that mutable updates to one copy will
 not affect the other, and thread safety is guaranteed.
 """
 function clone_system(sys::System{N}) where N
-    (; origin, mode, crystal, latsize, Ns, gs, κs, extfield, interactions_union, ewald, dipoles, coherents, rng) = sys
+    (; origin, mode, crystal, dims, Ns, gs, κs, extfield, interactions_union, ewald, dipoles, coherents, rng) = sys
 
     origin_clone = isnothing(origin) ? nothing : clone_system(origin)
     ewald_clone = nothing # TODO: use clone_ewald(ewald)
@@ -146,7 +154,7 @@ function clone_system(sys::System{N}) where N
     empty_dipole_buffers = Array{Vec3, 4}[]
     empty_coherent_buffers = Array{CVec{N}, 4}[]
 
-    ret = System(origin_clone, mode, crystal, latsize, Ns, copy(κs), copy(gs),
+    ret = System(origin_clone, mode, crystal, dims, Ns, copy(κs), copy(gs),
                  interactions_clone, ewald_clone, copy(extfield), copy(dipoles), copy(coherents),
                  empty_dipole_buffers, empty_coherent_buffers, copy(rng))
 
@@ -165,8 +173,8 @@ end
     (cell1, cell2, cell3, i) :: Site
 
 Four indices identifying a single site in a [`System`](@ref). The first three
-indices select the lattice cell and the last selects the sublattice (i.e., the
-atom within the unit cell).
+indices select the unit cell and the last index selects the sublattice, i.e.,
+the ``i``th atom within the unit cell.
 
 This object can be used to index `dipoles` and `coherents` fields of a `System`.
 A `Site` is also required to specify inhomogeneous interactions via functions
@@ -182,30 +190,30 @@ const Site = Union{NTuple{4, Int}, CartesianIndex{4}}
 @inline to_cartesian(i::CartesianIndex{N}) where N = i
 @inline to_cartesian(i::NTuple{N, Int})    where N = CartesianIndex(i)
 
+# Split a site `site` into its cell and sublattice parts
+@inline to_cell(site) = (site[1], site[2], site[3])
+@inline to_atom(site) = site[4]
+
 # Like mod1(x, L), but short-circuits early in the common case. See
 # https://github.com/SunnySuite/Sunny.jl/pull/184 for discussion.
 @inline function altmod1(x::Int, L::Int)
     1 <= x <= L ? x : mod1(x, L)
 end
 
-# Offset a `cell` by `ncells`
-@inline offsetc(cell::CartesianIndex{3}, ncells, latsize) = CartesianIndex(altmod1.(Tuple(cell) .+ Tuple(ncells), latsize))
-
-# Split a site `site` into its cell and sublattice parts
-@inline to_cell(site) = CartesianIndex((site[1],site[2],site[3]))
-@inline to_atom(site) = site[4]
-
-# An iterator over all unit cells using CartesianIndices
-@inline eachcell(sys::System) = CartesianIndices(sys.latsize)
+# Get the neighboring site associated with site and bond
+@inline function bonded_site(site, bond, dims)
+    # @assert to_atom(site) == bond.i
+    CartesianIndex(altmod1.(to_cell(site) .+ bond.n, dims)..., bond.j)
+end
 
 """
     spin_label(sys::System, i::Int)
 
-If atom `i` carries a single spin-``S`` moment, then returns the half-integer
-label ``S``. Otherwise, throws an error.
+If atom `i` carries a single spin-``s`` moment, then returns the half-integer
+label ``s``. Otherwise, throws an error.
 """
 function spin_label(sys::System, i::Int)
-    if sys.mode == :dipole_large_S
+    if sys.mode == :dipole_uncorrected
         return Inf
     else
         @assert sys.mode in (:dipole, :SUN)
@@ -217,10 +225,22 @@ end
 
 """
     eachsite(sys::System)
+    eachsite(sys::System, i)
 
-An iterator over all [`Site`](@ref)s in the system. 
+An iterator over all [`Site`](@ref)s in the system. Restrict to one sublattice
+`i` with an optional second argument.
 """
-@inline eachsite(sys::System) = CartesianIndices(sys.dipoles)
+@inline eachsite(sys::System) = CartesianIndices(size(sys.dipoles))
+@inline eachsite(sys::System, i) = CartesianIndices((sys.dims..., i:i))
+
+"""
+nsites(sys::System) = length(eachsite(sys))
+"""
+nsites(sys::System) = length(eachsite(sys))
+
+# Number of (original) crystal cells in the system
+ncells(sys::System) = nsites(sys) / natoms(orig_crystal(sys))
+
 
 """
     global_position(sys::System, site::Site)
@@ -251,7 +271,7 @@ function magnetic_moment(sys::System, site)
 end
 
 # Total volume of system
-volume(sys::System) = cell_volume(sys.crystal) * prod(sys.latsize)
+volume(sys::System) = cell_volume(sys.crystal) * prod(sys.dims)
 
 # The crystal originally used to construct a system. It is guaranteed to be
 # un-reshaped, and its lattice vectors define the "conventional" unit cell. It
@@ -290,7 +310,7 @@ function position_to_site(sys::System, r)
     r = Vec3(r)
     new_r = sys.crystal.latvecs \ orig_crystal(sys).latvecs * r
     i, offset = position_to_atom_and_offset(sys.crystal, new_r)
-    cell = @. mod1(offset+1, sys.latsize) # 1-based indexing with periodicity
+    cell = @. mod1(offset+1, sys.dims) # 1-based indexing with periodicity
     return to_cartesian((cell..., i))
 end
 
@@ -340,9 +360,9 @@ end
 
 Given a [`Bond`](@ref) for the original (unreshaped) crystal, return all
 symmetry equivalent bonds in the [`System`](@ref). Each returned bond is
-represented as a pair of [`Site`](@ref)s, which may be used as input to
-[`set_exchange_at!`](@ref) or [`set_pair_coupling_at!`](@ref). Reverse bonds are
-not included in the iterator (no double counting).
+represented as a pair of [`Site`](@ref)s and an `offset`, which may be used as
+input to [`set_exchange_at!`](@ref) or [`set_pair_coupling_at!`](@ref). Reverse
+bonds are not included in the iterator (no double counting).
 
 # Example
 ```julia
@@ -366,10 +386,8 @@ function symmetry_equivalent_bonds(sys::System, bond::Bond)
             new_bond = map_bond_to_other_crystal(orig_crystal(sys), bond′, sys.crystal, new_i)
 
             # loop over all new crystal cells and push site pairs
-            for new_cell_i in eachcell(sys)
-                new_cell_j = offsetc(new_cell_i, new_bond.n, sys.latsize)
-                site_i = (Tuple(new_cell_i)..., new_bond.i)
-                site_j = (Tuple(new_cell_j)..., new_bond.j)
+            for site_i in eachsite(sys, new_bond.i)
+                site_j = bonded_site(site_i, new_bond, sys.dims)
                 site_i < site_j && push!(ret, (site_i, site_j, new_bond.n))
             end
         end
@@ -378,43 +396,9 @@ function symmetry_equivalent_bonds(sys::System, bond::Bond)
     return ret
 end
 
-"""
-    remove_ion_at!(sys::System, site::Site)
-
-Remove all interactions associated with the magnetic ion at `site`. The system
-must support inhomogeneous interactions via [`to_inhomogeneous`](@ref).
-"""
-function remove_ion_at!(sys::System{N}, site) where N
-    is_homogeneous(sys) && error("Use `to_inhomogeneous` first.")
-
-    site = to_cartesian(site)
-
-    # Remove onsite coupling
-    ints = interactions_inhomog(sys)
-    ints[site].onsite = empty_anisotropy(sys.mode, N)
-
-    # Remove this site from neighbors' pair lists
-    for (; bond) in ints[site].pair
-        cell′ = offsetc(to_cell(site), bond.n, sys.latsize)
-        pair′ = ints[cell′, bond.j].pair
-        deleteat!(pair′, only(findall(pc′ -> pc′.bond == reverse(bond), pair′)))
-    end
-
-    # Empty pair list from this site
-    empty!(ints[site].pair)
-
-    # Set g=0 to disable Zeeman and dipole-dipole interactions
-    sys.gs[site] = Mat3(0I)
-
-    # Set κ=0 to disable all expectation values
-    sys.κs[site] = 0
-    sys.dipoles[site] = zero(Vec3)
-    sys.coherents[site] = zero(CVec{N})
-end
-
 
 struct SpinState{N}
-    s::Vec3
+    S::Vec3
     Z::CVec{N}
 end
 
@@ -430,31 +414,31 @@ end
 
 @inline function coherent_state(sys::System{N}, site, Z) where N
     Z = normalize_ket(CVec{N}(Z), sys.κs[site])
-    s = expected_spin(Z)
-    return SpinState(s, Z)
+    S = expected_spin(Z)
+    return SpinState(S, Z)
 end
 
 @inline function dipolar_state(sys::System{0}, site, dir)
-    s = normalize_dipole(Vec3(dir), sys.κs[site])
+    S = normalize_dipole(Vec3(dir), sys.κs[site])
     Z = CVec{0}()
-    return SpinState(s, Z)
+    return SpinState(S, Z)
 end
 @inline function dipolar_state(sys::System{N}, site, dir) where N
     return coherent_state(sys, site, ket_from_dipole(Vec3(dir), Val(N)))
 end
 
 @inline function flip(spin::SpinState{N}) where N
-    return SpinState(-spin.s, flip_ket(spin.Z))
+    return SpinState(-spin.S, flip_ket(spin.Z))
 end
 
 @inline function randspin(sys::System{0}, site)
-    s = normalize_dipole(randn(sys.rng, Vec3), sys.κs[site])
-    return SpinState(s, CVec{0}())
+    S = normalize_dipole(randn(sys.rng, Vec3), sys.κs[site])
+    return SpinState(S, CVec{0}())
 end
 @inline function randspin(sys::System{N}, site) where N
     Z = normalize_ket(randn(sys.rng, CVec{N}), sys.κs[site])
-    s = expected_spin(Z)
-    return SpinState(s, Z)
+    S = expected_spin(Z)
+    return SpinState(S, Z)
 end
 
 @inline function getspin(sys::System{N}, site) where N
@@ -462,14 +446,14 @@ end
 end
 
 @inline function setspin!(sys::System{N}, spin::SpinState{N}, site) where N
-    sys.dipoles[site] = spin.s
+    sys.dipoles[site] = spin.S
     sys.coherents[site] = spin.Z
     return
 end
 
 function is_valid_normalization(sys::System{0})
-    all(zip(sys.dipoles, sys.κs)) do (s, κ)
-        norm2(s) ≈ κ^2
+    all(zip(sys.dipoles, sys.κs)) do (S, κ)
+        norm2(S) ≈ κ^2
     end
 end
 function is_valid_normalization(sys::System{N}) where N
@@ -500,11 +484,11 @@ end
 Set a coherent spin state at a [`Site`](@ref) using the ``N`` complex amplitudes
 in `Z`.
 
-For a standard [`SpinInfo`](@ref), these amplitudes will be interpreted in the
-eigenbasis of ``𝒮̂ᶻ``. That is, `Z[1]` represents the amplitude for the basis
+For a single quantum spin-``s``, these amplitudes will be interpreted in the
+eigenbasis of ``Ŝ^z``. That is, `Z[1]` represents the amplitude for the basis
 state fully polarized along the ``ẑ``-direction, and subsequent components
-represent states with decreasing angular momentum along this axis (``m = S, S-1,
-…, -S``).
+represent states with decreasing angular momentum along this axis (``m = s, s-1,
+…, -s``).
 """
 function set_coherent!(sys::System{N}, Z, site) where N
     site = to_cartesian(site)

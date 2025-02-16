@@ -1,84 +1,87 @@
 # # 7. Long-range dipole interactions
 #
-# This example demonstrates Sunny's ability to incorporate long-range dipole
-# interactions using Ewald summation. The calculation reproduces previous
-# results in  [Del Maestro and Gingras, J. Phys.: Cond. Matter, **16**, 3339
+# This example demonstrates long-range dipole-dipole interactions in the context
+# of a spin wave calculation. These interactions can be included two ways: with
+# infinite-range [Ewald summation](@ref enable_dipole_dipole!) or with a
+# [real-space distance cutoff](@ref
+# modify_exchange_with_truncated_dipole_dipole!). The study follows [Del Maestro
+# and Gingras, J. Phys.: Cond. Matter, **16**, 3339
 # (2004)](https://arxiv.org/abs/cond-mat/0403494).
 
 using Sunny, GLMakie
 
-# Create a Pyrochlore crystal from spacegroup 227.
+# Create a pyrochlore crystal from Wyckoff 16c for spacegroup 227.
 
+units = Units(:K, :angstrom)
 latvecs = lattice_vectors(10.19, 10.19, 10.19, 90, 90, 90)
 positions = [[0, 0, 0]]
-cryst = Crystal(latvecs, positions, 227, setting="2")
+cryst = Crystal(latvecs, positions, 227)
+view_crystal(cryst)
 
-units = Units(:meV)
-sys = System(cryst, (1, 1, 1), [SpinInfo(1, S=7/2, g=2)], :dipole, seed=2)
-J1 = 0.304 * units.K
+# Create a [`System`](@ref) with a random number `seed` that was empirically
+# selected to produce the desired type of spontaneous symmetry breaking. Reshape
+# to the primitive cell, which contains four atoms. Add antiferromagnetic
+# nearest neighbor exchange interactions.
+
+sys = System(cryst, [1 => Moment(s=7/2, g=2)], :dipole; seed=0)
+sys = reshape_supercell(sys, primitive_cell(cryst))
+J1 = 0.304 # (K)
 set_exchange!(sys, J1, Bond(1, 2, [0,0,0]))
 
-# Reshape to the primitive cell with four atoms. To facilitate indexing, the
-# function [`position_to_site`](@ref) accepts positions with respect to the
-# original (cubic) cell.
+# Create a copy of the system and enable long-range dipole-dipole interactions
+# using Ewald summation.
 
-shape = [1/2 1/2 0; 0 1/2 1/2; 1/2 0 1/2]
-sys_prim = reshape_supercell(sys, shape)
+sys_lr = clone_system(sys)
+enable_dipole_dipole!(sys_lr, units.vacuum_permeability)
 
-set_dipole!(sys_prim, [+1, -1, 0], position_to_site(sys_prim, [0, 0, 0]))
-set_dipole!(sys_prim, [-1, +1, 0], position_to_site(sys_prim, [1/4, 1/4, 0]))
-set_dipole!(sys_prim, [+1, +1, 0], position_to_site(sys_prim, [1/4, 0, 1/4]))
-set_dipole!(sys_prim, [-1, -1, 0], position_to_site(sys_prim, [0, 1/4, 1/4]))
+# Create a copy of the system and add long-range dipole-dipole interactions up
+# to a 5 Å cutoff distance.
 
-plot_spins(sys_prim; ghost_radius=8, color=[:red, :blue, :yellow, :purple])
+sys_lr_cut = clone_system(sys)
+modify_exchange_with_truncated_dipole_dipole!(sys_lr_cut, 5.0, units.vacuum_permeability)
 
-# Calculate dispersions with and without long-range dipole interactions. The
-# high-symmetry k-points are specified with respect to the conventional cubic
-# cell.
+# Find an energy minimizing spin configuration accounting for the long-range
+# dipole-dipole interactions. This will arbitrarily select from a discrete set
+# of possible ground states based on the system `seed`.
 
-q_points = [[0,0,0], [0,1,0], [1,1/2,0], [1/2,1/2,1/2], [3/4,3/4,0], [0,0,0]]
-q_labels = ["Γ","X","W","L","K","Γ"]
-density = 150
-path, xticks = reciprocal_space_path(cryst, q_points, density)
-xticks = (xticks[1], q_labels)
+randomize_spins!(sys_lr)
+minimize_energy!(sys_lr)
+plot_spins(sys_lr; ghost_radius=8, color=[:red, :blue, :yellow, :purple])
 
-swt = SpinWaveTheory(sys_prim)
-disp1 = dispersion(swt, path)
+# Copy this configuration to the other two systems. Note that the original `sys`
+# has a _continuum_ of degenerate ground states.
 
-sys_prim_dd = clone_system(sys_prim)
-enable_dipole_dipole!(sys_prim_dd)
-swt = SpinWaveTheory(sys_prim_dd)
-disp2 = dispersion(swt, path)
+sys.dipoles .= sys_lr.dipoles
+sys_lr_cut.dipoles .= sys_lr.dipoles;
 
-sys_prim_tdd = clone_system(sys_prim)
-modify_exchange_with_truncated_dipole_dipole!(sys_prim_tdd, 5.0)
-swt = SpinWaveTheory(sys_prim_tdd)
-disp3 = dispersion(swt, path);
+# Calculate dispersions for the three systems. The high-symmetry ``𝐪``-points
+# are specified in reciprocal lattice units with respect to the conventional
+# cubic cell.
 
-# To reproduce Fig. 2 of [Del Maestro and
-# Gingras](https://arxiv.org/abs/cond-mat/0403494), an empirical rescaling of
-# energy is necessary.
+qs = [[0,0,0], [0,1,0], [1,1/2,0], [1/2,1/2,1/2], [3/4,3/4,0], [0,0,0]]
+labels = ["Γ", "X", "W", "L", "K", "Γ"]
+path = q_space_path(cryst, qs, 500; labels)
 
-fudge_factor = 1/2 # To reproduce prior work
+measure = ssf_trace(sys)
+swt = SpinWaveTheory(sys; measure)
+res1 = intensities_bands(swt, path)
 
-fig = Figure(size=(900,300))
+swt = SpinWaveTheory(sys_lr; measure)
+res2 = intensities_bands(swt, path)
 
-ax = Axis(fig[1,1]; xlabel="", ylabel="Energy (K)", xticks, xticklabelrotation=0)
-ylims!(ax, 0, 2)
-xlims!(ax, 1, size(disp1, 1))
-for i in axes(disp1, 2)
-    lines!(ax, 1:length(disp1[:,i]), fudge_factor*disp1[:,i]/units.K)
+swt = SpinWaveTheory(sys_lr_cut; measure)
+res3 = intensities_bands(swt, path);
+
+# Create a panel corresponding to Fig. 2 of [Del Maestro and
+# Gingras](https://arxiv.org/abs/cond-mat/0403494). Dashed lines show the effect
+# of truncating dipole-dipole interactions at 5 Å. The Del Maestro and Gingras
+# paper underreported the energy scale by a factor of two, and requires slight
+# corrections to its third dispersion band.
+
+fig = Figure(size=(768, 300))
+plot_intensities!(fig[1, 1], res1; units, title="Without long-range dipole")
+ax = plot_intensities!(fig[1, 2], res2; units, title="With long-range dipole")
+for c in eachrow(res3.disp)
+    lines!(ax, eachindex(c), c; linestyle=:dash, color=:black)
 end
-
-ax = Axis(fig[1,2]; xlabel="", ylabel="Energy (K)", xticks, xticklabelrotation=0)
-ylims!(ax, 0.0, 3)
-xlims!(ax, 1, size(disp2, 1))
-for i in axes(disp2, 2)
-    lines!(ax, 1:length(disp2[:,i]), fudge_factor*disp2[:,i]/units.K)
-end
-
-for i in axes(disp3, 2)
-    lines!(ax, 1:length(disp3[:,i]), fudge_factor*disp3[:,i]/units.K; color=:gray, linestyle=:dash)
-end
-
 fig

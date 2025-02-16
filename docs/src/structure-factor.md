@@ -1,4 +1,4 @@
-# Structure Factor Calculations
+# Structure Factor Conventions
 
 ## Dynamical correlations
 
@@ -12,7 +12,7 @@ correlation as an equilibrium expectation value,
 
 ```math
 \begin{equation}
-C(𝐫, t) = \int_V ⟨\hat{B}^\dagger(𝐫₀, 0) \hat{A}(𝐫₀ + 𝐫, t)⟩ d𝐫₀,
+C(𝐫, t) = \int_V ⟨\hat{B}^†(𝐫₀, 0) \hat{A}(𝐫₀ + 𝐫, t)⟩ d𝐫₀,
 \end{equation}
 ```
 
@@ -142,12 +142,12 @@ where $\tilde{𝐪}$ expresses momentum in dimensionless reciprocal lattice unit
 
 ```math
 \begin{equation}
-𝐪 = \tilde{k}_1 𝐛_1 + \tilde{k}_2 𝐛_2 + \tilde{k}_3 𝐛_3,
+𝐪 = \tilde{q}_1 𝐛_1 + \tilde{q}_2 𝐛_2 + \tilde{q}_3 𝐛_3,
 \end{equation}
 ```
 
 and $𝐛_{\{1,2,3\}}$ are the reciprocal lattice vectors. Equivalently,
-$\tilde{k}_μ ≡ 𝐪 ⋅ 𝐚_μ / 2π$.
+$\tilde{q}_μ ≡ 𝐪 ⋅ 𝐚_μ / 2π$.
 
 It will be convenient to introduce a dynamical correlation for the operators on
 sublattices $i$ and $j$ only,
@@ -188,22 +188,22 @@ C_{ij}^{αβ}(𝐪, t=0) = ⟨\hat{S}_{𝐪,i}^{α†} \hat{S}_{𝐪,j}^{β}⟩.
 \end{equation}
 ```
 
-In the quantum spin-$S$ representation, the spin dipole on one site satisfies
+In the quantum spin-$s$ representation, the spin dipole on one site satisfies
 
 ```math
 \begin{equation}
-|\hat{𝐒}|^2 = \hat{S}^α \hat{S}^α = S(S+1),
+|\hat{𝐒}|^2 = \hat{S}^α \hat{S}^α = s(s+1),
 \end{equation}
 ```
 
 with implicit summation on the repeated $α$ index.
 
 Suppose that each site of sublattice $j$ carries quantum spin of magnitude
-$S_j$. Then there is a quantum sum rule of the form,
+$s_j$. Then there is a quantum sum rule of the form,
 
 ```math
 \begin{equation}
-\int_{\tilde{V}_\mathrm{BZ}} \frac{C_{jj}^{αα}(𝐪, t=0)}{N_\mathrm{cells}} d\tilde{𝐪} = S_j (S_j + 1),
+\int_{\tilde{V}_\mathrm{BZ}} \frac{C_{jj}^{αα}(𝐪, t=0)}{N_\mathrm{cells}} d\tilde{𝐪} = s_j (s_j + 1),
 \end{equation}
 ```
 
@@ -252,7 +252,7 @@ Kronecker-$δ$,
 \end{equation}
 ```
 
-Note that $⟨\hat{S}_{𝐦,j}^α \hat{S}_{𝐦,j}^α⟩ = S_j(S_j+1)$ is constant,
+Note that $⟨\hat{S}_{𝐦,j}^α \hat{S}_{𝐦,j}^α⟩ = s_j(s_j+1)$ is constant,
 independent of the cell $𝐦$. This leaves a double sum over integers $𝐦$, which
 evaluates to $\sum_{𝐦, 𝐦'} δ_{𝐦, 𝐦'} = N_\mathrm{cells}$. Combined, these
 results verify the above-stated quantum sum rule for the sublattice $j$.
@@ -265,7 +265,7 @@ result is a sum over contributions $C_{jj}(𝐪, t=0)$ for each sublattice $j$,
 
 ```math
 \begin{equation}
-\frac{1}{N_\mathrm{BZ}} \int_{N_\mathrm{BZ} × \tilde{V}_\mathrm{BZ}} \int_{-∞}^∞ \frac{C^{αα}(𝐪, ω)}{ N_\mathrm{cells}} dω d\tilde{𝐪} = \sum_j S_j (S_j + 1).
+\frac{1}{N_\mathrm{BZ}} \int_{N_\mathrm{BZ} × \tilde{V}_\mathrm{BZ}} \int_{-∞}^∞ \frac{C^{αα}(𝐪, ω)}{ N_\mathrm{cells}} dω d\tilde{𝐪} = \sum_j s_j (s_j + 1).
 \end{equation}
 ```
 
@@ -315,12 +315,13 @@ neutron beam is,
 
 ```math
 \begin{equation}
-\frac{d^2 σ(𝐪, ω)}{dω dΩ} \left(\frac{q_f}{q_i}\right)^{-1} = \left(\frac{γ r_0}{2}\right)^2 \sum_{α,β} \left(δ_{α,β} - \frac{q^α q^β}{q^2}\right) \frac{\mathcal{S}^{αβ}(𝐪, ω)}{μ_B^2}.
+\frac{d^2 σ(𝐪, ω)}{dω dΩ} = \frac{q_f}{q_i} \left(\frac{γ r_0}{2}\right)^2 \sum_{α,β} \left(δ_{α,β} - \frac{q^α q^β}{q^2}\right) \frac{\mathcal{S}^{αβ}(𝐪, ω)}{μ_B^2}.
 \end{equation}
 ```
 
-Dimensions of area arise from the characteristic scattering length, $γ r_0 / 2 ≈
-2.69×10^{-5} \mathrm{Å}$, where $r_0$ is the classical electron radius.
+The prefactor $q_f/q_i$ will be provided experimentally. Dimensions of area
+arise from the characteristic scattering length, $γ r_0 / 2 ≈ 2.69×10^{-5}
+\mathrm{Å}$, where $r_0$ is the classical electron radius.
 
 The structure factor is of central importance to neutron scattering,
 
@@ -338,10 +339,12 @@ sublattice $j$.
 
 Calculating the structure factor involves several steps, with various possible
 settings. Sunny provides tools to facilitate this calculation and to extract
-information from the results. For details, please see our [tutorials](@ref "2.
-Spin wave simulations of CoRh₂O₄") as well as the complete [Library API](@ref).
+information from the results. For details, please see our [tutorials](@ref "1.
+Spin wave simulations of CoRh₂O₄") as well as the complete [Library
+Reference](@ref).
 
-Sunny will calculate the structure factor in dimensionless, intensive units,
+Through [`ssf_custom`](@ref) and related functions, Sunny will calculate the
+spin structure factor as a 3×3 matrix in dimensionless units,
 
 ```math
 \begin{equation}
@@ -349,72 +352,62 @@ Sunny will calculate the structure factor in dimensionless, intensive units,
 \end{equation}
 ```
 
-where $N_\mathrm{cells}$ is again the number of chemical cells in the
-macroscopic sample.
+This is an intensive quantity because $N_\mathrm{cells}$, the number of chemical
+cells in the macroscopic sample, is extensive. Note that the Sunny-calculated
+intensity will depend on the chemical cell convention: intensity scales linearly
+with chemical cell size.
 
-Sunny also provides a setting `apply_g = false` to calculate dynamical spin-spin
-correlations, $C_{⟨𝐒𝐒⟩}(𝐪, ω) / N_\mathrm{cells}$. This quantity corresponds
-to $𝒮(𝐪, ω) / g^2$ in the special case that $g$ is a uniform scalar.
+Use [`ssf_perp`](@ref) to contract with $δ_{α,β} - q^α q^β/q^2$, i.e., to
+project in the direction perpendicular to momentum transfer $𝐪$.
 
-The physical structure factor $\mathcal{S}(𝐪, ω)$ is extensive. Its value
-depends on sample size, but is invariant to the choice of chemical cell. Note,
-however, that $𝒮(𝐪, ω)$ is made intensive through normalization by
-$N_\mathrm{cells}$. Its numerical value _is_ dependent on the convention for the
-chemical cell; larger chemical cells lead to greater intensities reported by
-Sunny.
+Set `apply_g = false` to calculate the correlation $C_{⟨𝐒𝐒⟩}(𝐪, ω) /
+N_\mathrm{cells}$ between pure spin operators, rather than between magnetic
+moments. In this special case that $g$ is a uniform scalar, this is equivalent
+to $𝒮(𝐪, ω) / g^2$
 
-In most cases, users will calculate the structure factor within linear
-[`SpinWaveTheory`](@ref), whereby magnetic excitations are approximated as
-Holstein-Primakoff bosons. This calculation technique is relatively
-straightforward and efficient. Linear spin wave theory has two primary
-limitations, however. It cannot account for thermal fluctuations beyond the
-harmonic approximation, and it scales poorly in the size of the magnetic cell
-size (e.g., as needed to study systems with chemical disorder). The efficiency
-limitation can be overcome with [recently proposed
-algorithms](https://arxiv.org/abs/2312.08349) that are planned for
-[implementation in Sunny](https://github.com/SunnySuite/Sunny.jl/pull/92).
-However, the study of finite temperature fluctuations requires a calculation
-method that is entirely different from linear spin wave theory.
+## Calculations with spin wave theory
 
-## Estimating stucture factors with classical dynamics
+Calculating the dynamical structure factor with linear [`SpinWaveTheory`](@ref)
+is relatively direct. In the traditional approach, quantum spin operators are
+expressed with Holstein-Primakoff bosons, and dynamical correlations are
+calculated to leading order in inverse powers of the quantum spin-$s$. For
+systems constructed with `mode = :SUN`, Sunny automatically switches to a
+multi-flavor boson variant of spin wave theory, which captures more single-ion
+physics. Use [`SpinWaveTheorySpiral`](@ref) to study generalized spiral phases,
+which allow for an incommensurate propagation wavevector. The experimental
+module [`SpinWaveTheoryKPM`](@ref) implements [spin wave calculations using the
+kernel polynomial method](https://arxiv.org/abs/2312.0834). In the KPM approach,
+the computational cost scales linearly in the magnetic cell size. It can be
+useful for studying systems with large magnetic cells include systems with
+long-wavelength structures, or systems with quenched chemical disorder.
+
+
+## Calculations with classical spin dynamics
 
 Finite temperature structure factor intensities can be estimated from the
 dynamical correlations of classical spin dynamics (e.g. Landau-Lifshitz, or its
 SU($N$) generalization). This is fundamentally a Monte Carlo approach, as the
 trajectories must be initialized to a spin configuration that is sampled from
 the finite-temperature thermal equilibrium. Samples are accumulated into a
-`SampledCorrelations`, from which intensity information may be extracted. The
-user does not typically build their own `SampledCorrelations` but instead
-initializes one by calling either `dynamical_correlations` or
-`instant_correlations`, as described below.
+[`SampledCorrelations`](@ref), from which intensity information may be
+extracted.
 
-### Estimating a dynamical structure factor: ``𝒮(𝐪,ω)``
+Creating a `SampledCorrelations` requires specifying three keyword arguments.
+These will determine the dynamics used to calculate samples and, consequently,
+the $ω$ information that will be available. 
 
-A `SampledCorrelations` object for estimating the dynamical structure factor is
-created by calling [`dynamical_correlations`](@ref). This requires three keyword
-arguments. These will determine the dynamics used to calculate samples and,
-consequently, the $ω$ information that will be available. 
-
-1. `ωmax`: Sets the maximum resolved energy.
-2. `nω`: Sets the number of discrete energy values to resolve. The corresponding
-   energy resolution is approximately `Δω ≈ ωmax / nω`. To estimate the
-   structure factor with resolution `Δω`, Sunny must integrate a classical spin
-   dynamic trajectory over a time-scale of order `1 / Δω`. Computational cost
-   therefore scales approximately linearly in `nω`.
-3. `dt`: Determines the step size for dynamical time-integration. Larger is more
-   efficient, but the choice will be limited by the stability and accuracy
+1. `energies`: A uniform range of resolved energies.
+2. `dt`: The step size for dynamical time-integration. Larger may reduce
+   simulation time, but the choice will be limited by the stability and accuracy
    requirements of the [`ImplicitMidpoint`](@ref) integration method. The
-   function [`suggest_timestep`](@ref) can recommend a good value. The inverse
-   of `ωmax` also imposes an upper bound on `dt`.
+   function [`suggest_timestep`](@ref) can recommend a good value. The timestep
+   may be adjusted downward so that the specified `energies` are sampled
+   exactly.
+3. `measure`: Specification of the pair correlations. This will frequently be
+   reduced from the spin structure factor using one of [`ssf_trace`](@ref),
+   [`ssf_perp`](@ref), or [`ssf_custom_bm`](@ref).
 
-!!! warning "Intensity scale"
-
-    Intensities calculated with `dynamical_correlations` are currently scaled
-    by a prefactor of `Δω ≈ ωmax / nω`, the discretization in energy space.
-    This prefactor will be removed in a future Sunny version. See
-    [Issue 264](https://github.com/SunnySuite/Sunny.jl/issues/264).
-
-A sample may be added by calling `add_sample!(sc, sys)`. The input `sys` must be
+A sample may be added by calling [`add_sample!`](@ref). The input `sys` must be
 a spin configuration in good thermal equilibrium, e.g., using the continuous
 [`Langevin`](@ref) dynamics or using single spin flip trials with
 [`LocalSampler`](@ref). The statistical quality of the $𝒮(𝐪,ω)$ can be
@@ -424,7 +417,7 @@ calling `add_sample!` on each configuration.
 The outline of typical use case might look like this:
 ```
 # Make a `SampledCorrelations`
-sc = dynamical_correlations(sys; dt=0.05, ωmax=10.0, nω=100) 
+sc = SampledCorrelations(sys; dt=0.05, energies=range(0.0, 10.0, 100))
 
 # Add samples
 for _ in 1:nsamples
@@ -432,93 +425,48 @@ for _ in 1:nsamples
    add_sample!(sc, sys)    # Use spins to calculate trajectory and accumulate new sample of 𝒮(𝐪,ω)
 end
 ```
-The calculation may be configured in a number of ways; see the
-[`dynamical_correlations`](@ref) documentation for a list of all keywords.
 
-### Estimating an instantaneous ("static") structure factor: ``𝒮(𝐪)``
+### Extracting intensities sampled correlation data 
 
-Sunny provides two methods for calculating instantaneous structure factors
-$𝒮(𝐪)$. The first involves calculating spatial spin-spin correlations at
-single time slices. The second involves calculating a dynamic structure factor
-first and then integrating over $ω$. The advantage of the latter approach is
-that it enables application of an $ω$-dependent classical-to-quantum rescaling
-of structure factor intensities, a method that should be preferred whenever
-comparing results to experimental data or spin wave calculations. A disadvantage
-of this approach is that it is computationally more expensive. There are also
-many cases when it is not straightforward to calculate a meaningful dynamics, as
-when working with Ising spins. In this section we will discuss how to calculate
-instantaneous structure factors from static spin configurations. Information
-about calculating instantaneous data from a dynamical correlations can be found
-in the following section.
+Like in spin wave theory, the basic function for extracting intensities
+information from a `SampledCorrelations` is [`intensities`](@ref). It takes a
+`SampledCorrelations`, a collection of ``𝐪``-vectors, a collection of
+`energies`, and possible other options.
 
-The basic usage for the instantaneous case is very similar to the dynamic case,
-except one calls [`instant_correlations`](@ref) instead of
-`dynamical_correlations` to configure a `SampledCorrelations`. Note that there
-are no required keywords as there is no need to specify any dynamics.
-`instant_correlations` will return a `SampledCorrelations` containing no data.
-Samples may be added by calling `add_sample!(sc, sys)`, where `sc` is the
-`SampledCorrelations`. When performing a finite-temperature calculation, it is
-important to ensure that the spin configuration in the `sys` represents a good
-equilibrium sample, as in the dynamical case. Note, however, that we recommend
-calculating instantaneous correlations at finite temperature calculations by
-using full dynamics (i.e., using `dynamical_correlations`) and then integrating
-out the energy axis. An approach to doing this is described in the next section.
+Since classical dynamics simulation take place on a finite lattice, the
+fundamental intensities measurements are only available at a discrete grid of
+wave vectors. In reciprocal lattice units, available grid points are $𝐪 =
+[\frac{n_1}{L_1}, \frac{n_2}{L_2}, \frac{n_3}{L_3}]$, where $n_i$ runs from
+$(\frac{-L_i}{2}+1)$ to $\frac{L_i}{2}$ and $L_i$ is the linear dimension of the
+lattice used in the calculation. (An internal function
+`Sunny.available_wave_vectors` provides access to this grid.) By default
+[`intensities`](@ref) will adjust each wavevector $𝐪$ to the nearest available
+grid point. 
 
-### Extracting information from sampled correlation data 
-
-The basic function for extracting information from a `SampledCorrelations` at a
-particular wave vector, $𝐪$, is [`intensities_interpolated`](@ref). It takes a
-`SampledCorrelations`, a _list_ of wave vectors, and an
-[`intensity_formula`](@ref). The `intensity_formula` specifies how to contract
-and correct correlation data to arrive at a physical intensity. A simple example
-is `formula = intensity_formula(sc, :perp)`, which will instruct Sunny apply
-polarization corrections: $\sum_{αβ}(I-q_α q_β) 𝒮^{αβ}(𝐪,ω)$. An intensity at
-the wave vector $𝐪 = (𝐛_2 + 𝐛_3)/2$ may then be retrieved with
-`intensities_interpolated(sf, [[0.0, 0.5, 0.5]], formula)` .
-`intensities_interpolated` returns a list of `nω` elements at each wavevector.
-The corresponding $ω$ values can be retrieved by calling
-[`available_energies`](@ref) on `sf`. Note that there will always be some amount
-of "blurring" between neighboring energy values. This blurring originates from
-the finite-length dynamical trajectories following the algorithm [specified
+Similarly, the resolution in `energies` is controlled the dynamical trajectory
+length in real-time. Because the dynamical trajectory is not periodic in time,
+some blurring between neighboring energy bins is unavoidable. Sunny's algorithm
+for estimating the structure factor from real-time dynamics is [specified
 here](https://github.com/SunnySuite/Sunny.jl/pull/246#issuecomment-2119294846).
 
-Since Sunny only calculates the structure factor on a finite lattice when
-performing classical simulations, it is important to realize that exact
-information is only available at a discrete set of wave vectors. Specifically,
-for each axis index $i$, we will get information at $q_i = \frac{n}{L_i}$, where
-$n$ runs from $(\frac{-L_i}{2}+1)$ to $\frac{L_i}{2}$ and $L_i$ is the linear
-dimension of the lattice used for the calculation. If you request a wave vector
-that does not fall into this set, Sunny will automatically round to the nearest
-$𝐪$ that is available. If `intensities_interpolated` is given the keyword
-argument `interpolation=:linear`, Sunny will use trilinear interpolation to
-determine a result at the requested wave vector. 
+The temperature parameter `kT` is required for `SampledCorrelations`
+calculations, and will be used to perform classical-to-quantum rescaling of
+intensities. If `kT = nothing`, then intensities will be provided according to
+the classical Boltzmann distribution.
 
-To retrieve the intensities at all wave vectors for which there is exact data,
-first call the function [`available_wave_vectors`](@ref) to generate a list of
-`qs`. This takes an optional keyword argument `bzsize`, which must be given a
-tuple of three integers specifying the number of Brillouin zones to calculate,
-e.g., `bzsize=(2,2,2)`. The resulting list of wave vectors may then be passed to
-`intensities_interpolated`.
+### The instantaneous structure factor
 
-Alternatively, [`intensities_binned`](@ref) can be used to place the exact data
-into histogram bins for comparison with experiment.
+Use [`intensities_static`](@ref) to calculate $\mathcal{S}(𝐪)$, i.e.,
+ correlations that are "instantaneous" in real-time. Mathematically,
+$\mathcal{S}(𝐪)$ denotes an integral of the dynamical structure factor
+$\mathcal{S}(𝐪, ω)$ over all energies $ω$. In [`SpinWaveTheory`](@ref), the
+energy integral becomes a discrete sum over bands. In
+[`SampledCorrelations`](@ref), a classical-to-quantum correction factor will be
+applied within [`intensities`](@ref) prior to energy integration.
 
-The convenience function [`reciprocal_space_path`](@ref) returns a list of
-wavevectors sampled along a path that connects specified $𝐪$ points. This list
-can be used as an input to `intensities`. Another convenience method,
-[`reciprocal_space_shell`](@ref) will generate points on a sphere of a given
-radius. This is useful for powder averaging. 
-
-A number of arguments for [`intensity_formula`](@ref) are available which
-modify the calculation of structure factor intensity. It is generally recommended
-to provide a value of `kT` corresponding to the temperature of sampled configurations.
-Given `kT`, Sunny will include an energy- and temperature-dependent classical-to-quantum 
-rescaling of intensities in the formula.
-
-To retrieve intensity data from a instantaneous structure factor, use
-[`instant_intensities_interpolated`](@ref), which accepts similar arguments to
-`intensities_interpolated`. This function may also be used to calculate
-instantaneous information from a dynamical correlation data, i.e. from a
-`SampledCorrelations` created with `dynamical_correlations`. Note that it is
-important to supply a value to `kT` to reap the benefits of this approach over
-simply calculating a static structure factor at the outset. 
+Sunny also supports a mechanism to calculate static correlations without any
+spin dynamics. To collect such statistics, construct a
+`SampledCorrelationsStatic` object. In this case, `intensities_static` will
+return static correlations sampled from the classical Boltzmann distribution.
+This dynamics-free approach is faster, but may miss important features that
+derive from the quantum mechanical excitation spectrum.

@@ -21,9 +21,9 @@ end
 function stevens_as_spin_polynomials(k::Int)
     𝒪s = stevens_abstract_polynomials(; J=spin_vector_symbol, k)
     return map(𝒪s) do 𝒪
-        # In the large-S limit, only leading order terms contribute, yielding a
+        # In the large-s limit only leading order terms contribute, yielding a
         # homogeneous polynomial of degree k
-        𝒪 = sum(t for t in 𝒪 if DP.degree(t) == k)
+        𝒪 = DP.filter_terms(DP.OfDegree(k), 𝒪)
         # Remaining coefficients must be real integers; make this explicit
         𝒪 = DP.map_coefficients(x -> Int(x), 𝒪)
         return 𝒪
@@ -35,7 +35,7 @@ end
 # expectation values
 function expand_as_spin_polynomial(p)
     𝒮 = spin_vector_symbol
-    return DP.subs(p, 
+    return DP.subs(p,
         spin_squared_symbol => 𝒮⋅𝒮,
         [stevens_symbols[k] => stevens_as_spin_polynomials(k) for k=0:6]...
     )
@@ -91,9 +91,9 @@ end
 
 
 # Extract Stevens operator coefficients from spin polynomial
-function operator_to_stevens_coefficients(p::DP.AbstractPolynomialLike, S)
+function operator_to_stevens_coefficients(p::DP.AbstractPolynomialLike, S²)
     p = expand_in_stevens_operators(p)
-    p = DP.subs(p, spin_squared_symbol => S^2)
+    p = DP.subs(p, spin_squared_symbol => S²)
     return map(stevens_symbols) do 𝒪ₖ
         map(𝒪ₖ) do 𝒪kq
             j = findfirst(==(𝒪kq), DP.monomials(p))
@@ -102,7 +102,7 @@ function operator_to_stevens_coefficients(p::DP.AbstractPolynomialLike, S)
     end
 end
 
-function rotate_operator(p, R)
+function rotate_operator(p::DP.AbstractPolynomialLike, R)
     𝒮′ = R * [𝒮ˣ, 𝒮ʸ, 𝒮ᶻ]
     DP.subs(p, 𝒮ˣ => 𝒮′[1], 𝒮ʸ => 𝒮′[2], 𝒮ᶻ => 𝒮′[3])
 end

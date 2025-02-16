@@ -3,7 +3,7 @@
 
     latvecs = lattice_vectors(1, 1, 1.1, 90, 90, 120)
     cryst = Crystal(latvecs, [[0,0,0]])
-    sys = System(cryst, (4, 6, 2), [SpinInfo(1, S=1, g=2)], :dipole)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; dims=(4, 6, 2))
     set_exchange!(sys, 1.0, Bond(1, 1, [1, 0, 0]))
     set_exchange!(sys, 1.2, Bond(1, 1, [0, 0, 1]))
     set_exchange!(sys, diagm([0.2, 0.3, 0.4]), Bond(1, 1, [1, 0, 1]))
@@ -36,6 +36,18 @@
 
             [[0, 1/2, 0]]
         """
+    capt = IOCapture.capture() do
+        suggest_magnetic_supercell([[1/2,0,0], [0,1/2,0]])
+    end
+    @test capt.output == """
+        Possible magnetic supercell in multiples of lattice vectors:
+
+            [2 0 0; 0 2 0; 0 0 1]
+
+        for the rationalized wavevectors:
+
+            [[1/2, 0, 0], [0, 1/2, 0]]
+        """
 
     A1 = [1 0 0; 0 2 0; 0 0 1]
     A2 = [1 0 0; 1 2 0; 0 0 1]
@@ -43,7 +55,7 @@
     newsys2 = reshape_supercell(sys, A2)
 
     @test energy_per_site(sys) ≈ 2.55
-    
+
     newsys = reshape_supercell(sys, A1)
     @test energy_per_site(newsys) ≈ 2.55
     newsys = reshape_supercell(sys, A2)
@@ -52,12 +64,37 @@
     @test energy_per_site(newsys) ≈ 2.55
 end
 
+
+@testitem "Validate reshaping" begin
+    using LinearAlgebra
+    
+    latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
+    positions = [[0, 0, 0]/2, [1, 1, 1]/2]
+    cryst = Crystal(latvecs, positions)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole)
+    
+    primcell = primitive_cell(cryst)
+    reshape_supercell(sys, Diagonal([2, 3, 4])) # Fine
+    reshape_supercell(sys, primcell) # Fine
+    reshape_supercell(sys, primcell * Diagonal([2, 3, 4])) # Fine
+    msg = "Elements of `primitive_cell(cryst) \\ shape` must be integer. Calculated [3.5 0.5 -0.5; 1.0 3.0 -1.0; 0.5 -0.5 2.5]."
+    @test_throws msg reshape_supercell(sys, Diagonal([2, 3, 4]) * primcell)
+    
+    positions = [[0, 0, 0]]
+    cryst = Crystal(latvecs, positions)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole)
+    reshape_supercell(sys, Diagonal([2.0, 3, 4]))
+    msg = "Elements of `shape` must be integer. Received [2.5 0.0 0.0; 0.0 3.0 0.0; 0.0 0.0 4.0]."
+    @test_throws msg reshape_supercell(sys, Diagonal([2.5, 3, 4]))
+end
+
+
 @testitem "Equivalent reshaping" begin
     using LinearAlgebra
 
     latvecs = lattice_vectors(1, 1, 1, 90, 90, 120)
     cryst = Crystal(latvecs, [[0,0,0]])
-    sys = System(cryst, (3, 3, 3), [SpinInfo(1, S=1, g=2)], :dipole)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; dims=(3, 3, 3))
     randomize_spins!(sys)
 
     # Reshape to sheared volume
@@ -77,7 +114,7 @@ end
 @testitem "Interactions after reshaping" begin
     latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
     cryst = Crystal(latvecs, [[0,0,0]])
-    sys = System(cryst, (3, 3, 3), [SpinInfo(1, S=1, g=2)], :dipole)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; dims=(3, 3, 3))
     randomize_spins!(sys)
     
     # Commensurate shear that is specially designed to preserve the periodicity of
@@ -98,21 +135,21 @@ end
 
     latvecs = lattice_vectors(1, 1, 10, 90, 90, 120)
     cryst = Crystal(latvecs, [[0,0,0]])
-    latsize = (6, 6, 2)
-    sys = System(cryst, latsize, [SpinInfo(1, S=1, g=2)], :dipole)
+    dims = (6, 6, 2)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; dims)
     polarize_spins!(sys, (0,0,1))
 
     J = 1.5
     bond = Bond(1, 1, [1, 0, 0])
     set_exchange!(sys, J, bond)
 
-    E0 = J * prod(latsize) * (6/2)
+    E0 = J * prod(dims) * (6/2)
     @test energy(sys) == E0
 
-    A = [latsize[1] latsize[2]÷2 0
-         0          latsize[2]   0
-         0          0            latsize[3]]
-    @test det(A) ≈ prod(latsize)
+    A = [dims[1] dims[2]÷2 0
+         0       dims[2]   0
+         0       0         dims[3]]
+    @test det(A) ≈ prod(dims)
     sys2 = reshape_supercell(sys, A)
     @test Sunny.natoms(sys2.crystal) == 2
     @test energy(sys2) ≈ E0
@@ -134,9 +171,8 @@ end
     latvecs = lattice_vectors(a, a, a, 90, 90, 90)
     cryst = Crystal(latvecs, [[0,0,0]])
 
-    L = 3
     bond = Bond(1, 1, (1, 0, 0))
-    sys = System(cryst, (L,L,L), [SpinInfo(1, S=1, g=2)], :dipole, seed=0)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; dims=(3, 3, 3), seed=0)
     set_exchange!(sys, 1, bond)
     @test energy(sys) == 81
 
@@ -156,7 +192,7 @@ end
     c = 6.75214
     latvecs = lattice_vectors(a, b, c, 90, 90, 120)
     cryst = Crystal(latvecs, [[0,0,0]], 164)
-    sys = System(cryst, (4,4,4), [SpinInfo(1,S=1,g=2)], :SUN, seed=0)
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :SUN; dims=(4, 4, 4), seed=0)
 
     J1pm   = -0.236 
     J1pmpm = -0.161

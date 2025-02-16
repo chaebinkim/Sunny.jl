@@ -2,8 +2,8 @@
     using LinearAlgebra
 
     crystal = Crystal(lattice_vectors(1, 1, 1, 90, 90, 90), [[0, 0, 0]])
-    sys_dip = System(crystal, (1, 1, 1), [SpinInfo(1; S=1, g=2)], :dipole)
-    sys_sun = System(crystal, (1, 1, 1), [SpinInfo(1; S=1, g=2)], :SUN)
+    sys_dip = System(crystal, [1 => Moment(s=1, g=2)], :dipole)
+    sys_sun = System(crystal, [1 => Moment(s=1, g=2)], :SUN)
 
     B = [0, 0, 1]
     set_field!(sys_dip, B)
@@ -29,7 +29,7 @@ end
 @testitem "DM chain" begin
     latvecs = lattice_vectors(2, 2, 1, 90, 90, 90)
     cryst = Crystal(latvecs, [[0,0,0]], "P1")
-    sys = System(cryst, (1,1,1), [SpinInfo(1,S=1,g=-1)], :dipole)
+    sys = System(cryst, [1 => Moment(s=1, g=-1)], :dipole)
     D = 1
     B = 10.0
     set_exchange!(sys, dmvec([0, 0, D]), Bond(1, 1, [0, 0, 1]))
@@ -41,67 +41,48 @@ end
     randomize_spins!(sys)
     minimize_energy!(sys)
     @test energy_per_site(sys) ≈ -B
-    qpoints = [[0, 0, -1/2], [0, 0, 1/2]]
-    path, xticks = reciprocal_space_path(cryst, qpoints, 50)
-    swt = SpinWaveTheory(sys)
-    formula = intensity_formula(swt, :trace; kernel=delta_function_kernel)
-    disp, intens = intensities_bands(swt, path, formula)
-    disp_ref = [B + 2D*sin(2π*q[3]) for q in path]
-    intens_ref = [1.0 for _ in path]
-    @test disp[:,1] ≈ disp_ref
-    @test intens[:,1] ≈ intens_ref
+    qs = [[0, 0, -1/2], [0, 0, 1/3]]
+    swt = SpinWaveTheory(sys; measure=ssf_trace(sys))
+    res = intensities_bands(swt, qs)
+    disp_ref = [B + 2D*sin(2π*q[3]) for q in qs]
+    intens_ref = [1.0 for _ in qs]
+    @test res.disp[1,:] ≈ disp_ref
+    @test res.data[1,:] ≈ intens_ref
+
+    # Check SpinWaveTheorySpiral
+
+    swt = SpinWaveTheorySpiral(sys; measure=ssf_trace(sys; apply_g=false), k=[0,0,0], axis=[0,0,1])
+    res = intensities_bands(swt, qs)
+    @test res.disp[1, :] ≈ res.disp[2, :] ≈ res.disp[3, :] ≈ [B + 2D*sin(2π*q[3]) for q in qs]
+    @test res.data ≈ [1 1; 0 0; 0 0]
 
     # Below the saturation field, the ground state is a canted spiral
 
-    sys2 = resize_supercell(sys, (1, 1, 4))
-    B = 1
-    set_field!(sys2, [0, 0, B])
-    randomize_spins!(sys2)
-    minimize_energy!(sys2)
-    @test energy_per_site(sys2) ≈ -5/4
-    swt = SpinWaveTheory(sys2)
-    formula = intensity_formula(swt, :trace; kernel=delta_function_kernel)
-    qs = [[0,0,-1/3], [0,0,1/3]]
-    disp2, intens2 = intensities_bands(swt, qs, formula)
-    disp2_ref = [3.0133249314 2.5980762316 1.3228756763 0.6479760935
-                 3.0133249314 2.5980762316 1.3228756763 0.6479760935]
-    intens2_ref = [0.0292617379 0.4330127014 0.0 0.8804147011
-                   0.5292617379 0.4330127014 0.0 0.3804147011]
-    @test disp2 ≈ disp2_ref
-    @test intens2 ≈ intens2_ref
-
-    # Perform the same calculation with Single-Q functions
-
-    sys3 = resize_supercell(sys2, (1, 1, 1))
+    set_field!(sys, [0, 0, 1])
     axis = [0, 0, 1]
-    randomize_spins!(sys3)
-    k = Sunny.minimize_energy_spiral!(sys3, axis; k_guess=randn(3))
+    polarize_spins!(sys, [0.5, -0.2, 0.3])
+    k = minimize_spiral_energy!(sys, axis; k_guess=[0.1, 0.2, 0.9])
     @test k[3] ≈ 3/4
-    @test Sunny.spiral_energy_per_site(sys3; k, axis) ≈ -5/4
-    swt = SpinWaveTheory(sys3)
-    formula = Sunny.intensity_formula_spiral(swt, :trace; k, axis, kernel=delta_function_kernel)
-    disp3, intens3 = intensities_bands(swt, qs, formula)
-    disp3_ref = [3.0133249314 2.5980762316 0.6479760935
-                 3.0133249314 2.5980762316 0.6479760935]
-    intens3_ref = [0.0292617379 0.4330127014 0.8804147011
-                   0.5292617379 0.4330127014 0.3804147011]
-    @test disp3 ≈ disp3_ref
-    @test intens3 ≈ intens3_ref
+    @test spiral_energy_per_site(sys; k, axis) ≈ -5/4
 
-    # Finally, test fully polarized state
+    # Check SpinWaveTheorySpiral
 
-    B = 10
-    set_field!(sys3, [0, 0, B])
-    polarize_spins!(sys3, [0, 0, 1])
-    @test energy_per_site(sys3) ≈ -B
-    swt = SpinWaveTheory(sys3)
-    formula = Sunny.intensity_formula_spiral(swt, :trace; k, axis, kernel=delta_function_kernel)
-    disp4, intens4 = intensities_bands(swt, qs, formula)
-    # For the wavevector, qs[1] == [0,0,-1/2], corresponding to the first row of
-    # disp4 and intens4, all intensity is in the third (lowest energy)
-    # dispersion band. For the wavevector, qs[2] == [0,0,+1/2], all intensity is
-    # in the first (highest energy) dispersion band.
-    @test all(disp4[:,1] .≈ B + 2D*sin(2π*qs[2][3]))
-    @test all(disp4[:,3] .≈ B + 2D*sin(2π*qs[1][3]))
-    @test intens4 ≈ [0 0 1; 1 0 0]
+    qs = [[0,0,-1/3], [0,0,1/3]]
+    formfactors = [1 => FormFactor("Fe2")]
+    swt = SpinWaveTheorySpiral(sys; measure=ssf_trace(sys; apply_g=false, formfactors), k, axis)
+    res = intensities_bands(swt, qs)
+    disp_ref = [3.0133249314050294 3.013324931405025; 2.598076231555311 2.5980762315553187; 0.6479760935008405 0.6479760935008452]
+    intens_ref = [0.017051546888468827 0.3084140583919762; 0.2523273363813809 0.252327336381381; 0.5130396769375238 0.22167716543401594]
+    @test res.disp ≈ disp_ref
+    @test res.data ≈ intens_ref
+
+    # Check supercell equivalent
+
+    sys_enlarged = repeat_periodically_as_spiral(sys, (1, 1, 4); k, axis)
+    swt = SpinWaveTheory(sys_enlarged; measure=ssf_trace(sys_enlarged; apply_g=false, formfactors))
+    res = intensities_bands(swt, qs)
+    disp2_ref = [3.013324931405024 3.0133249314050277; 2.5980762315553148 2.598076231555316; 1.3228756763031237 1.3228756763031235; 0.647976093500838 0.6479760935008375]
+    intens2_ref = [0.01705154688846884 0.30841405839197655; 0.2523273363813807 0.25232733638138083; 0 0; 0.5130396769375255 0.2216771654340186]
+    @test res.disp ≈ disp2_ref
+    @test res.data ≈ intens2_ref
 end

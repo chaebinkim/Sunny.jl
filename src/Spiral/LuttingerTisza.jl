@@ -3,8 +3,8 @@
 # wavevector k between Bravais lattice cells. This analysis ignores local
 # normalization constraints for the spins within the cell.
 function luttinger_tisza_exchange(sys::System; k, ϵ=0)
-    @assert sys.mode in (:dipole, :dipole_large_S) "SU(N) mode not supported"
-    @assert sys.latsize == (1, 1, 1) "System must have only a single cell"
+    @assert sys.mode in (:dipole, :dipole_uncorrected) "SU(N) mode not supported"
+    @assert sys.dims == (1, 1, 1) "System must have only a single cell"
 
     Na = natoms(sys.crystal)
     J_k = zeros(ComplexF64, 3, Na, 3, Na)
@@ -25,7 +25,7 @@ function luttinger_tisza_exchange(sys::System; k, ϵ=0)
         A = Sunny.precompute_dipole_ewald_at_wavevector(sys.crystal, (1,1,1), k) * sys.ewald.μ0_μB²
         A = reshape(A, Na, Na)
         for i in 1:Na, j in 1:Na
-            J_k[:, i, :, j] += gs[i]' * A[i, j] * gs[j] / 2
+            J_k[:, i, :, j] += sys.gs[i]' * A[i, j] * sys.gs[j] / 2
         end
     end
 

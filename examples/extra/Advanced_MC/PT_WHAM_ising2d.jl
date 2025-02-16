@@ -6,9 +6,9 @@ crystal = Crystal(latvecs, [[0,0,0]])
 
 # 20×20 sites, ferromagnetic exchange
 L = 20
-sys = System(crystal, (L,L,1), [SpinInfo(1, S=1, g=-1)], :dipole, seed=0)
-polarize_spins!(sys, (0,0,1))
-set_exchange!(sys, -1.0, Bond(1,1,(1,0,0)))
+sys = System(crystal, [1 => Moment(s=1, g=-1)], :dipole; dims=(L, L, 1), seed=0)
+polarize_spins!(sys, [0, 0, 1])
+set_exchange!(sys, -1.0, Bond(1, 1, (1, 0, 0)))
 
 # Temperature schedule for parallel tempering
 kT_min = 0.5
@@ -27,7 +27,7 @@ measure_interval = 10
 exch_interval = 5
 
 # Energy histograms for each PT replica
-E_hists = [Sunny.Histogram() for _ in 1:PT.n_replicas]
+E_hists = [Sunny.Histogram(bin_size=1.0) for _ in 1:PT.n_replicas]
 
 # Initial equilibration
 Sunny.step_ensemble!(PT, n_therm, exch_interval)

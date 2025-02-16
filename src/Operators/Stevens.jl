@@ -72,7 +72,8 @@ function stevens_abstract_polynomials(; J, k::Int)
 end
 
 
-# Construct Stevens operators as polynomials in the spin operators.
+# Construct Stevens operators as polynomials in the spin operators. Listed in
+# descending order q = k,..-k.
 function stevens_matrices_of_dim(k::Int; N::Int)
     if k >= N
         return fill(Hermitian(zeros(ComplexF64, N, N)), 2k+1)
@@ -134,6 +135,9 @@ end
 const stevens_αinv = map(inv, stevens_α)
 
 
+# Expands matrix A in Stevens operators. The coefficients are returned as an
+# OffsetArray c[k] with indices k = 0..6. Elements of c[k][:] are the Stevens
+# coefficients in descending order q = k..-k.
 function matrix_to_stevens_coefficients(A::HermitianC64)
     N = size(A,1)
     @assert N == size(A,2)
@@ -162,15 +166,15 @@ function operator_for_stevens_rotation(k, R)
     return real(V)
 end
 
-# Let c denote coefficients of an operator expansion 𝒜 = c† 𝒪. Under the
+# Let c denote coefficients of an operator expansion 𝒜 = cᵀ 𝒪. Under the
 # rotation R, Stevens operators transform as 𝒪 → V 𝒪. Alternatively, we can
 # treat the Stevens operators as fixed, provided the coefficients transform as
-# c† → c† V, or c → V† c.
-function rotate_stevens_coefficients(c, R::Mat3)
+# cᵀ → cᵀ V, or c → Vᵀ c.
+function rotate_stevens_coefficients(c::AbstractVector{Float64}, R::Mat3)
     N = length(c)
     k = Int((N-1)/2)
     V = operator_for_stevens_rotation(k, R)
-    return V' * c
+    return transpose(V) * c
 end
 
 
@@ -179,7 +183,7 @@ end
 
 Prints a local Hermitian operator as a linear combination of Stevens operators.
 The operator `op` may be a finite-dimensional matrix or an abstract spin
-polynomial in the large-``S`` limit.
+polynomial in the large-``s`` limit.
 
 # Examples
 
@@ -223,18 +227,18 @@ end
 
 
 """
-    stevens_matrices(S)
+    stevens_matrices(s)
 
-Returns a generator of Stevens operators in the spin-`S` representation. The
-return value `O` can be indexed as `O[k,q]`, where ``0 ≤ k ≤ 6`` labels an irrep
-of SO(3) and ``-k ≤ q ≤ k``. This will produce an ``N×N`` matrix where ``N = 2S
-+ 1``. Linear combinations of Stevens operators can be used as a "physical
-basis" for decomposing local observables. To see this decomposition, use
+Returns the Stevens operators in the spin-`s` representation. The return value
+`O` can be indexed as `O[k,q]`, where ``0 ≤ k ≤ 6`` labels an irrep of SO(3) and
+``-k ≤ q ≤ k``. This will produce an ``N×N`` matrix where ``N = 2s + 1``. Linear
+combinations of Stevens operators can be used as a "physical basis" for
+decomposing local observables. To see this decomposition, use
 [`print_stevens_expansion`](@ref).
 
-If `S == Inf`, then symbolic operators will be returned. In this infinite
-dimensional limit, the Stevens operators become homogeneous polynomials of
-commuting spin operators.
+If `s == Inf`, then symbolic operators will be returned. In this infinite
+dimensional representation, the Stevens operators become homogeneous polynomials
+of commuting spin operators.
 
 # Example
 ```julia
@@ -246,21 +250,20 @@ B = S[1]^4 + S[2]^4 + S[3]^4
 @assert A ≈ B
 ```
 
-See also [`spin_matrices`](@ref) and [Interaction Strength
-Renormalization](@ref).
+See also [`spin_matrices`](@ref) and [Interaction Renormalization](@ref).
 """
-function stevens_matrices(S)
-    if isfinite(S) && !isinteger(2S+1)
-        error("Spin `S` must be half-integer or infinite.")
+function stevens_matrices(s)
+    if isfinite(s) && !isinteger(2s+1)
+        error("Spin `s` must be half-integer or infinite.")
     end
-    return StevensMatrices{S}()
+    return StevensMatrices{s}()
 end
 
 # Helper struct to support "index" notation for Stevens operators
-struct StevensMatrices{S} end
+struct StevensMatrices{s} end
 
-function Base.getindex(::StevensMatrices{S}, k::Int, q::Int) where S
-    N = Int(2S+1)
+function Base.getindex(::StevensMatrices{s}, k::Int, q::Int) where s
+    N = Int(2s+1)
     k < 0  && error("Stevens operators 𝒪[k,q] require k >= 0.")
     k > 6  && error("Stevens operators 𝒪[k,q] currently require k <= 6.")
     !(-k <= q <= k) && error("Stevens operators 𝒪[k,q] require -k <= q <= k.")

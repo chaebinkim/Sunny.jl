@@ -37,8 +37,8 @@ end
     FormFactor(ion::String; g_lande=2)
 
 The magnetic form factor for a given magnetic ion and charge state. When passed
-to an [`intensity_formula`](@ref), it rescales structure factor intensities
-based on the magnitude of the scattering vector, ``|𝐪|``.
+to [`intensities`](@ref), it rescales structure factor intensities based on the
+magnitude of the scattering vector, ``|𝐪|``.
 
 The parameter `ion` must be one of the following strings:
 
@@ -71,17 +71,20 @@ ERROR: Disambiguate form factor according to electronic configuration:
 
 In the dipolar approximation (small ``|𝐪|``) the form factor is
 
-``F(s) = ⟨j_0(s)⟩ + \\frac{2-g}{g} ⟨j_2(s)⟩``,
+``F(s) = ⟨j_0(s)⟩ + [(2-g)/g] ⟨j_2(s)⟩``,
 
 involving ``s = |𝐪|/4π`` and the Landé ``g``-factor. The ``⟨j_l(s)⟩`` are
 radial averages of the ``l``th spherical Bessel function of the magnetic dipole.
 More details are provided in Ref. [1].
 
-The ``⟨j_l(s)⟩`` can be approximated as a sum of Gaussians,
+The standard approximation tables involve expansion in Gaussians,
 
 ```math
-⟨j_0(s)⟩ = A e^{-as^2} + B e^{-bs^2} + C e^{-cs^2} + D e^{-ds^2} + E \\\\
-⟨j_2(s)⟩ = (A e^{-as^2} + B e^{-bs^2} + C e^{-cs^2} + D e^{-ds^2} + E) s^2
+⟨j_0(s)⟩ = A e^{-as^2} + B e^{-bs^2} + C e^{-cs^2} + D e^{-ds^2} + E
+```
+and
+```math
+⟨j_2(s)⟩ = (A e^{-as^2} + B e^{-bs^2} + C e^{-cs^2} + D e^{-ds^2} + E) s^2.
 ```
 
 For 3d, 4d, rare earth, and actinide ions, Sunny uses the revised tables of P.
@@ -93,13 +96,15 @@ Two special, ``𝐪``-independent form factor values are available:
 as a perfect point particle, while the second zeros all contributions from the
 magnetic ion.
 
-References:
+## References
 
- 1. [P. J. Brown, The Neutron Data Booklet, 2nd ed., Sec. 2.5 Magnetic Form
-    Factors (2003)](https://www.ill.eu/sites/ccsl/ffacts/ffachtml.html)
- 2. Coefficient tables in [McPhase
-    documentation](https://www2.cpfs.mpg.de/~rotter/homepage_mcphase/manual/node137.html)
- 3. K. Kobayashi, T. Nagao, M. Ito, Acta Cryst. A, 67 pp 473–480 (2011)
+1. [P. J. Brown, The Neutron Data Booklet, 2nd ed., Sec. 2.5 _Magnetic Form
+   Factors_ (2003)](https://www.ill.eu/sites/ccsl/ffacts/ffachtml.html).
+2. Coefficient tables in [McPhase
+   documentation](https://www2.cpfs.mpg.de/~rotter/homepage_mcphase/manual/node137.html).
+3. [K. Kobayashi, T. Nagao, M. Ito, _Radial integrals for the magnetic form
+   factor of 5d transition elements_, Acta Cryst. A, **67**, 473–480
+   (2011)](https://doi.org/10.1107/S010876731102633X).
 """
 function FormFactor(ion::String; g_lande=2)
     if !haskey(radial_integral_coefficients, ion)
@@ -123,19 +128,22 @@ function FormFactor(ion::String; g_lande=2)
     FormFactor(j0, j2, config, g_lande)
 end
 
+function Base.convert(::Type{FormFactor}, x::String)
+    return FormFactor(x)
+end
 
 function compute_gaussian_expansion(j::ExpandedBesselIntegral, s2)
     (; A, a, B, b, C, c, D, d, E) = j
     return A*exp(-a*s2) + B*exp(-b*s2) + C*exp(-c*s2) + D*exp(-d*s2) + E
 end
 
-function compute_form_factor(form_factor::FormFactor, k2_absolute::Float64)
+function compute_form_factor(form_factor::FormFactor, q2_absolute::Float64)
     (; j0, j2, g) = form_factor
 
     # Return early if this is the identity form factor
     (j0.A == j0.B == j0.C == j0.D == 0) && (j0.E == 1) && (g == 2) && return 1.0
 
-    s2 = k2_absolute / (4π)^2
+    s2 = q2_absolute / (4π)^2
     if g == 2
         return compute_gaussian_expansion(j0, s2)
     else
@@ -143,20 +151,6 @@ function compute_form_factor(form_factor::FormFactor, k2_absolute::Float64)
         J2 = compute_gaussian_expansion(j2, s2) * s2
         return J0 + ((2-g)/g) * J2
     end
-end
-
-# Given a form factor for each "symmetry class" of sites, return a form factor
-# for each atom in the crystal.
-function propagate_form_factors_to_atoms(ffs, cryst::Crystal)
-    isnothing(ffs) && return fill(one(FormFactor), natoms(cryst))
-    
-    ref_classes = unique(cryst.classes)
-    if length(ffs) != length(ref_classes)
-        error("""Received $(length(ffs)) form factors, but $(length(ref_classes)) are
-                 required, one for each symmetry-distinct site in the crystal.""")
-    end
-
-    return [ffs[findfirst(==(c), ref_classes)] for c in cryst.classes]
 end
 
 

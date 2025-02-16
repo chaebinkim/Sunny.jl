@@ -15,31 +15,32 @@ copied and pasted into your preferred Julia development environment.
 
 The serial approach to calculating a structure factor, covered in the [FeI₂
 tutorial](@ref "4. Generalized spin dynamics of FeI₂ at finite *T*"), involves
-thermalizing a spin `System` and then calling [`add_sample!`](@ref).
+thermalizing a spin [`System`](@ref) and then calling [`add_sample!`](@ref).
 `add_sample!` uses the state of the `System` as an initial condition for the
 calculation of a dynamical trajectory. The correlations of the trajectory are
-calculated and accumulated into a running average of the ``𝒮(𝐪,ω)``. This
-sequence is repeated to generate additional samples.
+calculated and accumulated into a running average of the ``\mathcal{S}(𝐪,ω)``.
+This sequence is repeated to generate additional samples.
 
 To illustrate, we'll set up a a simple model: a spin-1 antiferromagnet on a BCC
-crystal. 
+crystal. Constructing the `System` with a specific random number `seed` ensures
+full reproducibility of the simulation.
 
 ```julia
 using Sunny, GLMakie
 
-function make_system(; seed=nothing)
+function make_system(seed)
     latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
     positions = [[0, 0, 0]/2, [1, 1, 1]/2]
     cryst = Crystal(latvecs, positions)
-    sys = System(cryst, (10, 10, 2), [SpinInfo(1, S=1, g=2)], :dipole; seed)
-    set_exchange!(sys, 1.0, Bond(1,1,[1,0,0]))
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; dims=(10, 10, 2), seed)
+    set_exchange!(sys, 1.0, Bond(1, 1, [1, 0, 0]))
     return sys
 end
 
-sys = make_system()
+sys = make_system(0)
 ```
 
-A serial calculation of [`dynamical_correlations`](@ref) involving the
+A serial calculation of [`SampledCorrelations`](@ref) involving the
 [`Langevin`](@ref) sampling method can now be performed as follows:
 
 ```julia
@@ -51,7 +52,10 @@ for _ in 1:5000
 end
 
 # Accumulator for S(q,ω) samples
-sc = dynamical_correlations(sys; dt=0.1, nω=100, ωmax=10.0)
+
+energies = range(0.0, 10.0, 100)
+measure = ssf_perp(sys)
+sc = SampledCorrelations(sys; dt=0.1, energies, measure)
 
 # Collect 10 samples
 for _ in 1:10
@@ -77,20 +81,19 @@ Before going further, make sure that `Threads.nthreads()` returns a number great
 
 We will use multithreading in a very simple way, essentially employing a
 distributed memory approach to avoid conflicts around memory access. First
-preallocate a number of systems and correlations.
+preallocate a number of systems and correlations. The integer `id` of each
+system is used as its random number seed.
 
 ```julia
 npar = Threads.nthreads()
-systems = [make_system(; seed=id) for id in 1:npar]
-scs = [dynamical_correlations(sys; dt=0.1, nω=100, ωmax=10.0) for _ in 1:npar]
+systems = [make_system(id) for id in 1:npar]
+scs = [SampledCorrelations(sys; dt=0.1, energies, measure) for _ in 1:npar]
 ```
 
-!!! warning "Dealing with memory constraints"
-
-    If you have many threads available and are working with a large system, you
-    may not have enough memory to store all these systems and correlations. In
-    that case, simply reduce `npar` to a small enough value that you can make the
-    necessary allocations.
+!!! warning "Dealing with memory constraints"  
+    If many threads are available and the system sizes are large, there may not
+    be enough computer memory available to store the dynamical correlation data.
+    In this case, consider reducing the number of parallel threads, `npar`.
 
 When the `Threads.@threads` macro is applied before a `for` loop, the
 iterations of the loop will execute in parallel using the available threads.
@@ -150,12 +153,13 @@ environments. This is easily achieved with the `@everywhere` macro.
 ```julia
 @everywhere using Sunny
 
-@everywhere function make_system(; seed=nothing)
+@everywhere function make_system(seed)
     latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
     positions = [[0, 0, 0]/2, [1, 1, 1]/2]
     cryst = Crystal(latvecs, positions)
-    sys = System(cryst, (10, 10, 2), [SpinInfo(1, S=1, g=2)], :dipole; seed)
-    set_exchange!(sys, 1.0, Bond(1,1,[1,0,0]))
+    sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; seed)
+    sys = resize_supercell(sys, (10, 10, 2))
+    set_exchange!(sys, 1.0, Bond(1, 1, [1, 0, 0]))
     return sys
 end
 ```
@@ -179,8 +183,8 @@ called `scs`.
 
 ```julia
 scs = pmap(1:ncores) do id
-    sys = make_system(; seed=id)
-    sc = dynamical_correlations(sys; dt=0.1, nω=100, ωmax=10.0)
+    sys = make_system(id)
+    sc = SampledCorrelations(sys; dt=0.1, energies, measure)
     integrator = Langevin(0.05; damping=0.2, kT=0.5)
 
     for _ in 1:5000

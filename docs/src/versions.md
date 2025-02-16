@@ -1,7 +1,109 @@
 # Version History
 
+## v0.7.6
+(In development)
+
+* Vacancies defined by [`set_vacancy_at!`](@ref) are supported in linear spin
+  wave theory. Empty sites are modeled using bosons that do not excite.
+* Fix correctness of [`suggest_magnetic_supercell`](@ref) when multiple
+  wavevectors are provided.
+
+## v0.7.5
+(Jan 20, 2025)
+
+* [`view_crystal`](@ref) shows allowed quadratic anisotropy.
+  [`print_site`](@ref) accepts an optional reference atom `i_ref`, with default
+  of `i`. The optional reference bond `b_ref` of [`print_bond`](@ref) now
+  defaults to `b`.
+* The `regularization` parameter in [`SpinWaveTheory`](@ref) is reduced by half,
+  and now corresponds to an effective energy shift. This may affect intensities,
+  especially at small excitation energies.
+* Update dependencies and in particular fix `color` compile error.
+
+## v0.7.4
+(Dec 6, 2024)
+
+* Higher-precision convergence in [`minimize_energy!`](@ref).
+* Make [`minimize_energy!`](@ref) compatible with [`set_vacancy_at!`](@ref).
+* The [`System`](@ref) constructor now seeds its internal random number
+  generator using Julia's task-local random number generator.
+* Add [`print_irreducible_bz_paths`](@ref), which builds on
+  [Brillouin.jl](https://github.com/thchr/Brillouin.jl) and
+  [SeeK-path](http://www.materialscloud.org/tools/seekpath/).
+* Add function [`view_bz`](@ref) for visualizing reciprocal-space objects in the
+  context of the first Brillouin zone.
+* Fix [`load_nxs`](@ref) for compatibility with recent JLD2.
+* Fix Makie precompiles for faster time-to-first-plot in Julia 1.11 ([PR
+  #329](https://github.com/SunnySuite/Sunny.jl/pull/329)).
+
+## v0.7.3
+(Nov 12, 2024)
+
+* Fix error in `print_symmetry_table` for slightly-distorted crystal cells ([PR
+  #317](https://github.com/SunnySuite/Sunny.jl/pull/317)).
+* Stabilize [`SpinWaveTheoryKPM`](@ref). It now automatically selects the
+  polynomial order according to an error tolerance.
+* Rename mode `:dipole_large_S` to `:dipole_uncorrected` to emphasize that
+  corrections are missing.
+* The [`Crystal`](@ref) constructor, by default, interprets a spacegroup number
+  in its ITA standard setting, e.g., as used by the [Bilbao crystallographic
+  server](https://www.cryst.ehu.es/cryst/get_wp.html). The keyword argument
+  `setting` becomes `choice`, and can typically be omitted.
+* Rename `primitive_cell_shape` to [`primitive_cell`](@ref).
+
+## v0.7.2
+(Sep 11, 2024)
+
+* Fix error in `SampledCorrelations` with a coarse ``𝐪``-grid. ([PR
+  #314](https://github.com/SunnySuite/Sunny.jl/pull/314)).
+* Fix colorbar in `plot_intensities!` when all data is uniform ([PR
+  #315](https://github.com/SunnySuite/Sunny.jl/pull/315)).
+* An explicit `colorrange` can be used for plotting `intensities_bands`.
+
+## v0.7.1
+(Sep 3, 2024)
+
+* Correctness fix for scalar biquadratic interactions specified with option
+  `biquad` to [`set_exchange!`](@ref).
+* Prototype implementation of entangled units.
+
+## v0.7.0
+(Aug 30, 2024)
+
+This **major release** introduces breaking interface changes.
+
+* The interface for calculating intensities has been revised to unify
+  functionality across backends. The functions [`intensities_bands`](@ref),
+  [`intensities`](@ref), and [`intensities_static`](@ref) no longer expect a
+  "formula", and instead take keyword arguments directly. Pair correlations are
+  now specified using [`ssf_perp`](@ref) and related functions. The constructors
+  [`SampledCorrelations`](@ref) and [`SampledCorrelationsStatic`](@ref) replace
+  `dynamic_correlations` and `static_correlations`, respectively.
+* New function [`plot_intensities`](@ref) enables convenient plotting for many
+  types of intensities plots. Mutating variant [`plot_intensities!`](@ref)
+  enables multi-panel plots.
+* One should now specify a range of ``𝐪``-points with [`q_space_path`](@ref) or
+  [`q_space_grid`](@ref).
+* [`SpinWaveTheorySpiral`](@ref) is available to perform calculations on
+  generalized spiral structures, which may be incommensurate.
+* [`repeat_periodically_as_spiral`](@ref) replaces
+  `set_spiral_order_on_sublattice!` and `set_spiral_order!`.
+* New convenience functions [`powder_average`](@ref) and
+  [`domain_average`](@ref), which wrap [`intensities`](@ref).
+* [`System`](@ref) now expects supercell dimensions as a `dims` keyword
+  argument. [`Moment`](@ref) replaces `SpinInfo`. Lower-case `s` now labels
+  quantum spin.
+* In [`view_crystal`](@ref) and [`plot_spins`](@ref) use `ndims` instead of
+  `dims` for the number of spatial dimensions.
+* Binning features have been removed. Some functionality may be added back in a
+  future release.
+* Experimental `SpinWaveTheoryKPM` feature implements a [new
+  algorithm](https://arxiv.org/abs/2312.08349) to enable intensities
+  calculations at a computational cost that scales linearly in system size.
+
+
 ## v0.6.1
-(In progress)
+(Aug 2, 2024)
 
 * **Breaking changes**: [`magnetic_moment`](@ref) is now reported in units of
   the Bohr magneton, ``μ_B``. For model systems where the Zeeman coupling aligns
@@ -13,7 +115,7 @@
   that can be obtained from `units.vacuum_permeability`.
 
 ## v0.6.0
-(June 18, 2024)
+(Jun 18, 2024)
 
 * Various correctness fixes. The magnetic moment is now anti-aligned with the
   spin dipole ([Issue 190](https://github.com/SunnySuite/Sunny.jl/issues/190)),
@@ -33,7 +135,7 @@
   positions.
 
 ## v0.5.11
-(June 2, 2024)
+(Jun 2, 2024)
 
 * Fixes for Makie 0.21.
 
@@ -46,8 +148,8 @@
   spin wave theory, with proper Ewald summation. For a faster alternative, the
   experimental function [`modify_exchange_with_truncated_dipole_dipole!`](@ref)
   will accept a real-space cutoff.
-* Intensities calculated with [`dynamical_correlations`](@ref) now avoid
-  "bleeding artifacts" at low-energy (long-timescale) modes. See [PR
+* Intensities calculated with `dynamic_correlations` now avoid "bleeding
+  artifacts" at low-energy (long-timescale) modes. See [PR
   246](https://github.com/SunnySuite/Sunny.jl/pull/246) for details. This
   eliminates the need for `process_trajectory=:symmetrize`.
 * When passed to `intensity_formula`, the special value `zero(FormFactor)` can
@@ -71,7 +173,7 @@
 (Mar 25, 2024)
 
 * **Correctness fixes**: Structure factor conventions are now uniform across
-  modes and [precisely specified](@ref "Structure Factor Calculations"). The
+  modes and [precisely specified](@ref "Structure Factor Conventions"). The
   g-tensor is applied by default (disable with `apply_g = false`). The intensity
   is additive with increasing number of magnetic ions in the chemical cell,
   consistent with SpinW. [Issue
@@ -84,11 +186,11 @@
   #149](https://github.com/SunnySuite/Sunny.jl/issues/149).
 * Scalar biquadratic interactions can again be set in `:dipole_large_S` mode via
   the keyword argument `biquad` of [`set_exchange!`](@ref).
-* Significantly speed up [`dynamical_correlations`](@ref) for crystals with many
-  atoms in the unit cell. [Issue
+* Significantly speed up `dynamic_correlations` for crystals with many atoms in
+  the unit cell. [Issue
   #204](https://github.com/SunnySuite/Sunny.jl/issues/204).
 * Renamings: `dt` replaces `Δt` and `damping` replaces `λ`. This affects
-  [`Langevin`](@ref), [`ImplicitMidpoint`], and [`dynamical_correlations`](@ref)
+  [`Langevin`](@ref), [`ImplicitMidpoint`], and `dynamic_correlations`
   functions.
 
 ## v0.5.8
@@ -147,19 +249,19 @@ to work with deprecation warnings, but these will become hard errors Sunny v0.6.
   al., [arXiv:2310.19905]](https://arxiv.org/abs/2310.19905).
 
 ## v0.5.5
-(Sept 29, 2023)
+(Sep 29, 2023)
 
 * [`reshape_supercell`](@ref) now allows reshaping to multiples of the primitive
   unit cell, which can speed up certain calculations. This is illustrated in the
   CoRh₂O₄ powder averaging tutorial.
 * [`resize_supercell`](@ref) now allows all resizings.
 * Added [`energy_per_site`](@ref).
-* [`set_spiral_order_on_sublattice!`](@ref) cannot work on reshaped systems.
+* `set_spiral_order_on_sublattice!` cannot work on reshaped systems.
 * Various bug fixes. In particular, an `intensity_formula` with `:full` will now
   uniformly calculate a `3x3` matrix of complex numbers.
 
 ## v0.5.4
-(Sept 11, 2023)
+(Sep 11, 2023)
 
 * Various enhancements to [`view_crystal`](@ref). Atoms are now labeled by
   index, and bonds support interactive inspection (GLMakie only). Font sizes
@@ -170,15 +272,14 @@ to work with deprecation warnings, but these will become hard errors Sunny v0.6.
   passed to [`reshape_supercell`](@ref). The new tolerance parameter `tol`
   allows `suggest_magnetic_supercell` to approximate incommensurate wavevectors
   with nearby commensurate ones.
-* New functions [`set_spiral_order!`](@ref) and
-  [`set_spiral_order_on_sublattice!`](@ref) can be used to initialize a spiral,
-  single-$Q$ order.
+* New functions `set_spiral_order!` and `set_spiral_order_on_sublattice!` can be
+  used to initialize a spiral, single-$Q$ order.
 * Sunny now retains all constant energy shifts that have been introduced by
   anisotropy operators.
-* Fix `export_vtk` functionality.
+* Fix [`export_vtk`](@ref) functionality.
 
 ## v0.5.3
-(Sept 8, 2023)
+(Sep 8, 2023)
 
 * Add `large_S_spin_operators` and `large_S_stevens_operators`
   to support single-ion anisotropies in dipole mode without renormalization. Set
@@ -217,7 +318,7 @@ Major refactors and enhancements to intensity calculations. This new interface
 allows unification between LSWT and classical spin dynamics calculations. This
 interface allows: Custom observables as local quantum operators, better support
 for linebroadening, and automatic binning to facilitate comparison with
-experimental data. See [`intensity_formula`](@ref) for documentation. Use
+experimental data. See `intensity_formula` for documentation. Use
 [`load_nxs`](@ref) to load experimental neutron scattering data.
 
 **Breaking changes**.
@@ -235,20 +336,20 @@ operator.
 Remove `set_biquadratic!`. Instead, use an optional keyword argument `biquad` to
 [`set_exchange!`](@ref).
 
-Rename `DynamicStructureFactor` to [`dynamical_correlations`](@ref). Similarly,
-replace `InstantStructureFactor` with [`instant_correlations`](@ref). The return
-type has been renamed [`SampledCorrelations`](@ref) to emphasize that the object
-may be holding thermodynamic samples, which are collected using
-[`add_sample!`](@ref). Upon construction, the `SampledCorrelations` object will
-be empty (no initial sample).
+Rename `DynamicStructureFactor` to `dynamic_correlations`. Similarly, replace
+`InstantStructureFactor` with `instant_correlations`. The return type has been
+renamed [`SampledCorrelations`](@ref) to emphasize that the object may be
+holding thermodynamic samples, which are collected using [`add_sample!`](@ref).
+Upon construction, the `SampledCorrelations` object will be empty (no initial
+sample).
 
-Remove `intensities` function. Instead, use one of
-[`intensities_interpolated`](@ref) or [`intensities_binned`](@ref). These will
-require an [`intensity_formula`](@ref), which defines a calculator (e.g., LSWT).
+Remove `intensities` function. Instead, use one of `intensities_interpolated` or
+`intensities_binned`. These will require an `intensity_formula`, which defines a
+calculator (e.g., LSWT).
 
-Rename `connected_path` to [`reciprocal_space_path`](@ref), which now returns an
+Rename `connected_path` to `reciprocal_space_path`, which now returns an
 `xticks` object that can be used in plotting. Replace `spherical_shell` with
-[`reciprocal_space_shell`](@ref) that functions similarly.
+`reciprocal_space_shell` that functions similarly.
 
 Rename `polarize_spin!` to [`set_dipole!`](@ref) for consistency with
 [`set_coherent!`](@ref). The behavior of the former function is unchanged: the
@@ -260,8 +361,8 @@ Rename `reshape_geometry` to [`reshape_supercell`](@ref), which is the
 fundamental reshaping function. Rename `resize_periodically` to
 [`resize_supercell`](@ref).
 
-The constructor [`SpinInfo`](@ref) now requires a $g$-factor or tensor as a
-named argument.
+The constructor `SpinInfo` now requires a $g$-factor or tensor as a named
+argument.
 
 The constructor [`FormFactor`](@ref) no longer accepts an atom index. Instead,
 the form factors are associated with site-symmetry classes in order of
@@ -327,11 +428,11 @@ This update includes many breaking changes, and is missing some features of
 Rename `SpinSystem` to [`System`](@ref). Its constructor now has the form,
 
 ```julia
-System(crystal, latsize, infos, mode)
+System(crystal, dims, infos, mode)
 ```
 
-The parameter `infos` is now a list of [`SpinInfo`](@ref) objects. Each defines
-spin angular momentum $S = \frac{1}{2}, 1, \frac{3}{2}, …$, and an optional
+The parameter `infos` is now a list of `SpinInfo` objects. Each defines spin
+angular momentum $S = \frac{1}{2}, 1, \frac{3}{2}, …$, and an optional
 $g$-factor or tensor.
 
 The parameter `mode` is one of `:SUN` or `:dipole`.

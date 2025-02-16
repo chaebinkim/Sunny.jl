@@ -1,65 +1,55 @@
-<div align="center">
-    <a href="https://github.com/SunnySuite/Sunny.jl/">
-        <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/SunnySuite/Sunny.jl/main/assets/sunny_logo-dark.svg">
-            <img src="https://raw.githubusercontent.com/SunnySuite/Sunny.jl/main/assets/sunny_logo.svg" alt="Sunny.jl" width="350px">
-        </picture>
-    </a>
-    <br><br>
-    <table>
-    <tr>
-        <td>
-            <b>Documentation:</b>&nbsp;&nbsp;
-            <a href="https://sunnysuite.github.io/Sunny.jl/stable"><img src="https://img.shields.io/badge/docs-stable-blue.svg" alt="Docs-stable"></a>&nbsp;&nbsp;
-            <a href="https://sunnysuite.github.io/Sunny.jl/dev"><img src="https://img.shields.io/badge/docs-dev-blue.svg" alt="Docs-dev"></a>
-        </td>
-        <td>
-            <b>Build status:</b>&nbsp;&nbsp;
-            <a href="https://github.com/SunnySuite/Sunny.jl/actions/workflows/CI.yml?query=branch%3Amain"><img src="https://github.com/SunnySuite/Sunny.jl/actions/workflows/CI.yml/badge.svg?branch=main" alt="CI"></a>
-        </td>
-    </tr>
-    </table>
-</div>
+<a href="https://github.com/SunnySuite/Sunny.jl/">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/SunnySuite/Sunny.jl/main/assets/sunny_logo-dark.svg">
+        <img src="https://raw.githubusercontent.com/SunnySuite/Sunny.jl/main/assets/sunny_logo.svg" alt="Sunny.jl" width="350px">
+    </picture>
+</a>
+
+| **Documentation**         | **Build Status**      | **Citation**            |
+| :------------------------ | :-------------------- | :---------------------- |
+| [![][docs-img]][docs-url] | [![][ci-img]][ci-url] | [![][doi-img]][doi-url] |
+
+[docs-img]: https://img.shields.io/badge/docs-stable-blue.svg
+[docs-url]: https://sunnysuite.github.io/Sunny.jl/stable
+[ci-img]: https://github.com/SunnySuite/Sunny.jl/actions/workflows/CI.yml/badge.svg?branch=main
+[ci-url]: https://github.com/SunnySuite/Sunny.jl/actions/workflows/CI.yml?query=branch%3Amain
+[doi-img]: https://img.shields.io/badge/DOI-10.48550-blue
+[doi-url]: https://doi.org/10.48550/arXiv.2501.13095
 
 ## Overview
 
-Sunny is a Julia package for modeling atomic-scale magnetism using classical spin dynamics with quantum corrections. It provides powerful tools to estimate dynamical structure factor intensities, $\mathcal{S}(𝐪,ω)$, enabling quantitative comparison with experimental scattering data, e.g., neutrons or x-rays.
+Sunny is a Julia package for modeling atomic-scale magnetism with quantum effects. Spin dynamics simulation enables direct comparison with experimental scattering data, e.g., neutrons or x-rays. Ease of use is a priority, with tools for symmetry-guided modeling and interactive visualization.
 
-A unique feature of Sunny is its treatment of spins as [SU(_N_) coherent states](https://doi.org/10.48550/arXiv.2106.14125). Each quantum spin-_S_ state is a superposition of $N=2S+1$ levels, and evolves under unitary, SU(_N_) transformations. When entanglement is neglected, the formalism allows to generalize the Landau-Lifshitz dynamics of spin dipoles to a dynamics of spin multipoles. The theory becomes especially useful for modeling materials with strong single-ion anisotropy effects (see our [FeI₂ tutorial](https://sunnysuite.github.io/Sunny.jl/dev/examples/01_LSWT_SU3_FeI2.html)). In the future, Sunny will also support explicit spin-orbit coupling, and 'units' of locally entangled spins.
-
-At low-temperatures, Sunny supports the usual linear spin wave theory for spin dipoles, and its ['multi-boson' generalization](https://doi.org/10.48550/arXiv.1307.7731). At finite temperatures, the full classical dynamics (with quantum correction factors) may be preferable to capture strongly nonlinear fluctuations. The [coupling of SU(_N_) spins to a thermal bath](https://doi.org/10.48550/arXiv.2209.01265) also makes possible the study of various non-equilibrium dynamics, e.g., thermal transport, pump-probe experiments, and spin-glass relaxation.
-
-Sunny provides a number of tools to facilitate the specification and solution of spin Hamiltonians. This includes spacegroup symmetry analysis, powerful Monte Carlo sampling algorithms, and interactive 3D visualization. Efficient simulation is made possible by several algorithmic developments. See our [Sunny publications](https://github.com/SunnySuite/Sunny.jl/wiki/Sunny-literature) for more information.
-
+At low-temperatures, Sunny supports the usual linear spin wave theory of spin dipoles with generalization to multi-flavor bosons. At finite temperatures, Sunny supports the classical Landau-Lifshitz spin dynamics with generalization to SU(_N_) coherent states. Such generalizations are useful for modeling the coupled dynamics of higher order spin multipoles (see, e.g., the [FeI₂ tutorial](https://sunnysuite.github.io/Sunny.jl/stable/examples/03_LSWT_SU3_FeI2.html)), and for capturing localized "units" of strongly entangled spins. Dynamical coupling to a thermal bath makes possible the study of non-equilibrium dynamics, e.g., thermal transport, pump-probe experiments, and spin-glass relaxation. Many of these features build on our team's [theoretical research](https://sunnysuite.github.io/Sunny.jl/stable/why.html#Advanced-theory-made-accessible).
 
 ## Try it out!
 
-New Julia users should begin with our **[Getting Started](https://github.com/SunnySuite/Sunny.jl/wiki/Getting-started-with-Julia)** guide. A showcase for Sunny is the **[FeI₂ tutorial](https://sunnysuite.github.io/Sunny.jl/dev/examples/01_LSWT_SU3_FeI2.html)**. This compound has a strong easy-axis anisotropy which gives rise to a single-ion bound state, and serves to exemplify the power of simulating SU(_N_) coherent states. Regarding the traditional linear spin wave theory of dipoles, see our [adaptations of the SpinW tutorials](https://sunnysuite.github.io/Sunny.jl/dev/examples/spinw/SW08_Kagome_AFM.html).
+Browse the **[Tutorials](https://sunnysuite.github.io/Sunny.jl/stable/examples/01_LSWT_CoRh2O4)**. For traditional linear spin wave theory, see also the [SpinW ports](https://sunnysuite.github.io/Sunny.jl/stable/examples/spinw/SW01_FM_Heseinberg_chain.html).
 
-Sunny is evolving rapidly. [Version History](https://sunnysuite.github.io/Sunny.jl/dev/versions/) lists the new features and breaking changes. To install a specific version of Sunny, say `v0.x`, use the command `add Sunny@0.x`.
+See [Getting Started](https://github.com/SunnySuite/Sunny.jl/wiki/Getting-started-with-Julia) for installation instructions. [Version History](https://sunnysuite.github.io/Sunny.jl/dev/versions) lists new features and breaking changes.
 
-## Other spin wave codes
+## Related packages
 
-Sunny is inspired by SpinW, especially regarding symmetry analysis, model specification, and linear spin wave calculations. Relative to other spin wave codes, this table highlights Sunny's special features (as of 2024):
+Sunny is inspired by SpinW, especially regarding symmetry analysis and traditional spin wave theory. Relative to other spin wave codes, this table highlights Sunny's special features (as of 2025):
 
 | | [McPhase](https://github.com/mducle/mcphase) | [SpinW](https://github.com/SpinW/spinw) | Sunny |
 | -- | -- | -- | -- |
 | Symmetry-guided modeling | ❌ | ✅ | ✅ |
 | Interactive graphics | ❌ | ✅ | ✅ |
-| General spin-multipole interactions | ✅ | ❌ | ✅ |
-| [Interaction renormalization for dipoles](https://arxiv.org/abs/2304.03874) | ❌ | ❌ | ✅ |
-| [Multi-flavor spin wave theory](https://arxiv.org/abs/1307.7731) | ✅ | ❌ | ✅ |
-| [Classical SU(_N_) spin dynamics](https://arxiv.org/abs/2209.01265)</u> | ❌ | ❌ | ✅ |
-| Ewald summation for dipole-dipole | ❌ | ❌ | ✅ |
+| [Incommensurate spiral order](https://sunnysuite.github.io/Sunny.jl/stable/examples/spinw/SW15_Ba3NbFe3Si2O14.html) | ❌ | ✅ | ✅ |
+| [Interaction renormalization](https://sunnysuite.github.io/Sunny.jl/stable/renormalization.html) | ❌ | ❌ | ✅ |
+| [Multi-flavor spin wave theory](https://sunnysuite.github.io/Sunny.jl/stable/examples/03_LSWT_SU3_FeI2.html) | ✅ | ❌ | ✅ |
+| [Arbitrary spin-multipole couplings](https://sunnysuite.github.io/Sunny.jl/stable/library.html#Sunny.set_pair_coupling!) | ✅ | ❌ | ✅ |
+| [Classical SU(_N_) spin dynamics](https://sunnysuite.github.io/Sunny.jl/stable/examples/04_GSD_FeI2.html) | ❌ | ❌ | ✅ |
+| [Linear-scaling spin wave theory](https://sunnysuite.github.io/Sunny.jl/stable/examples/09_Disorder_KPM.html) | ❌ | ❌ | ✅ |
+| [Fast long-range dipole interactions](https://sunnysuite.github.io/Sunny.jl/stable/examples/07_Dipole_Dipole.html) | ❌ | ❌ | ✅ |
 | Programming language | C++ | Matlab | [Julia](https://julialang.org/) |
 
-The classical SU(_N_) spin dynamics in Sunny generalizes the Landau-Lifshitz equation for $S > 1/2$ quantum spins. Linearizing and quantizing SU(_N_) dynamics yields a generalization of spin wave theory involving multi-flavor bosons.
-
-Codes like [Spirit](https://github.com/spirit-code/spirit) and [Vampire](https://vampire.york.ac.uk/) focus less on capturing quantum effects, but may be good options for classical dynamics of pure dipoles.
+Codes like [Spirit](https://github.com/spirit-code/spirit) and [Vampire](https://vampire.york.ac.uk/) focus less on capturing quantum effects, but might be preferred for large-scale classical spin dynamics, e.g., for micromagnetics.
 
 ## Join our community
 
-We want to interact with you! Please **[join our Slack community](https://join.slack.com/t/sunny-users/shared_invite/zt-1otxwwko6-LzPtp7Fazkjx2XEqfgKqtA)** and say hello. If you encounter a problem with Sunny, please ask on the Slack `#helpdesk` channel or  [file a Github issue](https://github.com/SunnySuite/Sunny.jl/issues). If you use Sunny in a paper, please let us know and add it to our [Literature Wiki](https://github.com/SunnySuite/Sunny.jl/wiki/Sunny-literature).
+We want to interact with you! Please [join our Slack community](https://join.slack.com/t/sunny-users/shared_invite/zt-1otxwwko6-LzPtp7Fazkjx2XEqfgKqtA) and say hello. If you encounter a problem, please ask on the Slack `#helpdesk` channel. If you find Sunny useful, please cite this [software paper](https://arxiv.org/abs/2501.13095) and list your work on the [Literature Wiki](https://github.com/SunnySuite/Sunny.jl/wiki/Sunny-literature).
 
 <br>
 <div>
@@ -94,4 +84,5 @@ We want to interact with you! Please **[join our Slack community](https://join.s
     </picture>
     </a>
 </div>
+
 

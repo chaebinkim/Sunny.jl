@@ -15,16 +15,13 @@
     axis = normalize(randn(3))
 
     # compute ewald energy using J(k)
-    sys = System(cryst, (1, 1, 1), [SpinInfo(1, S=1, g=1)], :dipole, seed=0)
+    sys = System(cryst, [1 => Moment(s=1, g=1)], :dipole, seed=0)
     randomize_spins!(sys)
     enable_dipole_dipole!(sys, 1.0)
-    E1 = Sunny.spiral_energy_per_site(sys; k, axis)
+    E1 = spiral_energy_per_site(sys; k, axis)
 
     # compute ewald energy using supercell
-    sys_large = System(cryst, (La*Na, Lb*Nb, Lc*Nc), [SpinInfo(1, S=1, g=1)], :dipole, seed=0)
-    for i in 1:Sunny.natoms(sys.crystal)
-        set_spiral_order_on_sublattice!(sys_large, i; k, axis, S0=sys.dipoles[i])
-    end
+    sys_large = repeat_periodically_as_spiral(sys, (La*Na, Lb*Nb, Lc*Nc); k, axis)
     enable_dipole_dipole!(sys_large, 1.0)
     E2 = energy_per_site(sys_large)
 
@@ -38,16 +35,12 @@
     axis = normalize(randn(3))
 
     # compute ewald energy using J(Q)
-    sys = System(cryst, (1, 1, 1), [SpinInfo(1, S=1, g=1)], :dipole, seed=0)
+    sys = System(cryst, [1 => Moment(s=1, g=1)], :dipole, seed=0)
     randomize_spins!(sys)
     enable_dipole_dipole!(sys, 1.0)
-    E1 = Sunny.spiral_energy_per_site(sys; k, axis)
+    E1 = spiral_energy_per_site(sys; k, axis)
 
-    # compute ewald energy using supercell
-    sys_large = System(cryst, (La*Na, Lb*Nb, Lc*Nc), [SpinInfo(1, S=1, g=1)], :dipole, seed=0)
-    for i in 1:Sunny.natoms(sys.crystal)
-        set_spiral_order_on_sublattice!(sys_large, i; k, axis, S0=sys.dipoles[i])
-    end
+    sys_large = repeat_periodically_as_spiral(sys, (La*Na, Lb*Nb, Lc*Nc); k, axis)
     enable_dipole_dipole!(sys_large, 1.0)
     E2 = energy_per_site(sys_large)
 
@@ -56,16 +49,15 @@ end
 
 
 @testitem "Canted AFM" begin
-    function test_canted_afm(S)
+    function test_canted_afm(; s)
         J, D, h = 1.0, 0.54, 0.76
-        rcs = Sunny.rcs_factors(S)[2]
+        rcs = Sunny.rcs_factors(s)[2]
         a = 1
         latvecs = lattice_vectors(a, a, 10a, 90, 90, 90)
         positions = [[0, 0, 0]]
         cryst = Crystal(latvecs, positions)
 
-        dims = (1, 1, 1)
-        sys = System(cryst, dims, [SpinInfo(1; S, g=-1)], :dipole)
+        sys = System(cryst, [1 => Moment(; s, g=-1)], :dipole)
         set_exchange!(sys, J, Bond(1, 1, [1, 0, 0]))
         set_onsite_coupling!(sys, S -> (D/rcs)*S[3]^2, 1)
         set_field!(sys, [0, 0, h])
@@ -75,26 +67,24 @@ end
 
         axis = [0, 0, 1]
         randomize_spins!(sys)
-        k = Sunny.minimize_energy_spiral!(sys, axis; k_guess=randn(3))
+        k = minimize_spiral_energy!(sys, axis; k_guess=randn(3))
         @test k[1:2] ≈ [0.5, 0.5]
         @test isapprox(only(sys.dipoles)[3], h / (8J + 2D); atol=1e-6)
 
         q = [0.12, 0.23, 0.34]
-        swt = SpinWaveTheory(sys)
-        formula = Sunny.intensity_formula_spiral(swt, :perp; k, axis, kernel=delta_function_kernel)
-        disp, _ = intensities_bands(swt, [q], formula)
-        ϵq_num = disp[1,1]
+        swt = SpinWaveTheorySpiral(sys; measure=nothing, k, axis)
+        ϵq_num = dispersion(swt, [q])
 
         # Analytical
-        θ = acos(h / (2S*(4J+D)))
+        θ = acos(h / (2s*(4J+D)))
         Jq = 2J*(cos(2π*q[1])+cos(2π*q[2]))
-        ϵq_ana = real(√Complex(4J*S*(4J*S+2D*S*sin(θ)^2) + cos(2θ)*(Jq*S)^2 + 2S*Jq*(4J*S*cos(θ)^2 + D*S*sin(θ)^2)))
+        ϵq_ana = real(√Complex(4J*s*(4J*s+2D*s*sin(θ)^2) + cos(2θ)*(Jq*s)^2 + 2s*Jq*(4J*s*cos(θ)^2 + D*s*sin(θ)^2)))
 
-        @test ϵq_num ≈ ϵq_ana
+        @test ϵq_num[begin, 1] ≈ ϵq_ana
     end
 
-    test_canted_afm(1)
-    test_canted_afm(2)
+    test_canted_afm(s=1)
+    test_canted_afm(s=2)
 end
 
 
@@ -103,7 +93,7 @@ end
     c = 5.2414
     latvecs = lattice_vectors(a, b, c, 90, 90, 120)
     crystal = Crystal(latvecs, [[0.24964, 0, 0.5]], 150)
-    sys = System(crystal, (1,1,1), [SpinInfo(1; S=5/2, g=2)], :dipole; seed=1)
+    sys = System(crystal, [1 => Moment(s=5/2, g=2)], :dipole; seed=1)
     set_exchange!(sys, 0.85,  Bond(3, 2, [1,1,0]))   # J1
     set_exchange!(sys, 0.24,  Bond(1, 3, [0,0,0]))   # J2
     set_exchange!(sys, 0.053, Bond(2, 3, [-1,-1,1])) # J3
@@ -118,8 +108,8 @@ end
 
     axis = [0, 0, 1]
     randomize_spins!(sys)
-    k = Sunny.minimize_energy_spiral!(sys, axis; k_guess=randn(3))
-    @test Sunny.spiral_energy(sys; k, axis) ≈ -16.356697120589477
+    k = minimize_spiral_energy!(sys, axis; k_guess=randn(3))
+    @test spiral_energy(sys; k, axis) ≈ -16.356697120589477
 
     # There are two possible chiralities. Select just one.
     @test isapprox(k, k_ref; atol=1e-6) || isapprox(k, k_ref_alt; atol=1e-6)
@@ -127,20 +117,22 @@ end
         sys.dipoles[[1,2]] = sys.dipoles[[2,1]]
         k = k_ref
     end
-    @test Sunny.spiral_energy(sys; k, axis) ≈ -16.356697120589477
+    @test spiral_energy(sys; k, axis) ≈ -16.356697120589477
 
-    swt = SpinWaveTheory(sys)
-    formula = Sunny.intensity_formula_spiral(swt, :perp; k, axis, kernel=delta_function_kernel)
+    measure = ssf_perp(sys; apply_g=false)
+    swt = SpinWaveTheorySpiral(sys; measure, k, axis)
     q = [0.41568,0.56382,0.76414]
-    disp, intens = intensities_bands(swt, [q], formula)
-    # TODO: why reverse?
-    disp_spinw = reverse([2.6267,3.8202,3.9422,2.8767,3.9095,4.4605,3.31724,4.0113,4.7564])
-    intens_spinw = [0.484724856017038, 0.962074686407910, 0.0932786148844105, 0.137966379056292, 0.0196590925454593, 2.37155695274281, 2.21507666401705, 0.118744173882554, 0.0547564956435423]
-    # Sunny dispersion bands appear in descending order. Sort SpinW calculation
-    # in the same way.
+    res = intensities_bands(swt, [q])
+
+    disp_spinw = [4.7564, 4.0113, 3.31724, 4.4605, 3.9095, 2.8767, 3.9422, 3.8202, 2.6267]
+    data_spinw = [0.484724856017038, 0.962074686407910, 0.0932786148844105, 0.137966379056292, 0.0196590925454593, 2.37155695274281, 2.21507666401705, 0.118744173882554, 0.0547564956435423]
+    # Sunny dispersion is sorted in descending order
     P = sortperm(disp_spinw; rev=true)
-    @test isapprox(disp[1,:], disp_spinw[P]; atol=1e-3)
-    @test isapprox(intens[1,:], intens_spinw[P]/Sunny.natoms(crystal); atol=1e-3)    
+    @test isapprox(res.disp[:, 1], disp_spinw[P]; atol=1e-3)
+    @test isapprox(res.data[:, 1], data_spinw[P]; atol=2e-3)
+
+    disp = dispersion(swt, [q])
+    @test res.disp ≈ disp
 end
 
 
@@ -174,7 +166,7 @@ end
     # Exact energy reference
     E_ref = (-((J1+J5)*cos(pi*ka))+J2*cos(2*pi*ka)-J3*cos(3*pi*ka)+J4*cos(pi*kc)+J6*cos(pi*(2*ka+kc))+J7*cos(pi*(2*ka-kc)))*5/2*(5/2)*4
     
-    sys = System(cryst, (1,1,1), [SpinInfo(1,S=5/2,g=2)], :dipole, seed=0)
+    sys = System(cryst, [1 => Moment(s=5/2, g=2)], :dipole, seed=0)
     set_exchange!(sys, J1, bond1)
     set_exchange!(sys, J2, bond2)
     set_exchange!(sys, J3, bond3)
@@ -193,7 +185,7 @@ end
     
     axis = [0, 0, 1]
     randomize_spins!(sys)
-    k = Sunny.minimize_energy_spiral!(sys, axis; k_guess=randn(3))
+    k = minimize_spiral_energy!(sys, axis; k_guess=randn(3))
     E = Sunny.luttinger_tisza_exchange(sys; k)
     @test isapprox(E, E_ref; atol=1e-12)
     @test isapprox(k, k_ref; atol=1e-6) || isapprox(k, k_ref_alt; atol=1e-6)    

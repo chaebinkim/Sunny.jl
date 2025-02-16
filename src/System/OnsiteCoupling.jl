@@ -3,46 +3,51 @@ function onsite_coupling(sys, site, matrep::AbstractMatrix)
     size(matrep) == (N, N) || error("Invalid matrix size.")
     matrep ≈ matrep' || error("Operator is not Hermitian")
 
+    if N == 2 && isapprox(matrep, matrep[1, 1] * I; atol=1e-8)
+        suggest = sys.mode == :dipole ? " (use :dipole_uncorrected for legacy calculations)" : ""
+        @warn "Onsite coupling is always trivial for quantum spin s=1/2" * suggest
+    end
+
     if sys.mode == :SUN
         return Hermitian(matrep)
     elseif sys.mode == :dipole
-        S = spin_label(sys, to_atom(site))
+        s = spin_label(sys, to_atom(site))
         c = matrix_to_stevens_coefficients(hermitianpart(matrep))
-        return StevensExpansion(rcs_factors(S) .* c)
-    elseif sys.mode == :dipole_large_S
-        error("System with mode `:dipole_large_S` requires a symbolic operator.")
+        return StevensExpansion(rcs_factors(s) .* c)
+    elseif sys.mode == :dipole_uncorrected
+        error("System with mode `:dipole_uncorrected` requires a symbolic operator.")
     end
 end
 
 function onsite_coupling(sys, site, p::DP.AbstractPolynomialLike)
-    if sys.mode != :dipole_large_S
-        error("Symbolic operator only valid for system with mode `:dipole_large_S`.")
+    if sys.mode != :dipole_uncorrected
+        error("Symbolic operator only valid for system with mode `:dipole_uncorrected`.")
     end
 
-    S = sys.κs[site]
-    c = operator_to_stevens_coefficients(p, S)
+    S² = sys.κs[site]^2
+    c = operator_to_stevens_coefficients(p, S²)
 
     # No renormalization here because symbolic polynomials `p` are associated
-    # with the large-S limit.
+    # with the large-s limit.
     return StevensExpansion(c)
 end
 
 
 # k-dependent renormalization of Stevens operators O[k,q] as derived in
 # https://arxiv.org/abs/2304.03874.
-function rcs_factors(S)
+function rcs_factors(s)
     λ = [1,                                                                  # k=0
          1,                                                                  # k=1
-         1 - (1/2)/S,                                                        # k=2
-         1 - (3/2)/S + (1/2)/S^2,                                            # k=3
-         1 - 3/S + (11/4)/S^2 - (3/4)/S^3,                                   # k=4
-         1 - 5/S + (35/4)/S^2 - (25/4)/S^3 + (3/2)/S^4,                      # k=5
-         1 - (15/2)/S + (85/4)/S^2 - (225/8)/S^3 + (137/8)/S^4 - (15/4)/S^5] # k=6
+         1 - (1/2)/s,                                                        # k=2
+         1 - (3/2)/s + (1/2)/s^2,                                            # k=3
+         1 - 3/s + (11/4)/s^2 - (3/4)/s^3,                                   # k=4
+         1 - 5/s + (35/4)/s^2 - (25/4)/s^3 + (3/2)/s^4,                      # k=5
+         1 - (15/2)/s + (85/4)/s^2 - (225/8)/s^3 + (137/8)/s^4 - (15/4)/s^5] # k=6
     return OffsetArray(λ, 0:6)
 end
 
 function empty_anisotropy(mode, N)
-    if mode == :dipole || mode == :dipole_large_S
+    if mode in (:dipole, :dipole_uncorrected)
         c = map(k -> zeros(2k+1), OffsetArray(0:6, 0:6))
         return StevensExpansion(c)
     elseif mode == :SUN
@@ -109,6 +114,17 @@ set_onsite_coupling!(sys, S -> 20*(S[1]^4 + S[2]^4 + S[3]^4), i)
 O = stevens_matrices(spin_label(sys, i))
 set_onsite_coupling!(sys, O[4,0] + 5*O[4,4], i)
 ```
+
+!!! warning "Limitations arising from quantum spin operators"  
+    Single-ion anisotropy is physically impossible for local moments with
+    quantum spin ``s = 1/2``. Consider, for example, that any Pauli matrix
+    squared gives the identity. More generally, one can verify that the ``k``th
+    order Stevens operators `O[k, q]` are zero whenever ``s < k/2``.
+    Consequently, an anisotropy quartic in the spin operators requires ``s ≥ 2``
+    and an anisotropy of sixth order requires ``s ≥ 3``. To circumvent this
+    physical limitation, Sunny provides a mode `:dipole_uncorrected` that
+    naïvely replaces quantum spin operators with classical moments. See the
+    documentation page [Interaction Renormalization](@ref) for more information.
 """
 function set_onsite_coupling!(sys::System, op, i::Int)
     is_homogeneous(sys) || error("Use `set_onsite_coupling_at!` for an inhomogeneous system.")
@@ -131,9 +147,8 @@ function set_onsite_coupling!(sys::System, op, i::Int)
     onsite = onsite_coupling(sys, CartesianIndex(1,1,1,i), op)
 
     if !is_anisotropy_valid(sys.crystal, i, onsite)
-        @error """Symmetry-violating anisotropy: $op.
-                  Use `print_site(crystal, $i)` for more information."""
-        error("Invalid anisotropy.")
+        error("""Symmetry-violating anisotropy: $op.
+                 Use `print_site(cryst, $i)` for more information.""")
     end
 
     cryst = sys.crystal
@@ -172,6 +187,8 @@ See also [`set_onsite_coupling!`](@ref).
 """
 function set_onsite_coupling_at!(sys::System, op, site::Site)
     is_homogeneous(sys) && error("Use `to_inhomogeneous` first.")
+    is_vacant(sys, site) && error("Cannot couple vacant site")
+
     ints = interactions_inhomog(sys)
     site = to_cartesian(site)
     ints[site].onsite = onsite_coupling(sys, site, op)
@@ -183,13 +200,13 @@ function set_onsite_coupling_at!(sys::System, fn::Function, site::Site)
 end
 
 
-# Evaluate a given linear combination of Stevens operators in the large-S limit,
-# where each spin operator is replaced by its dipole expectation value. In this
-# limit, each Stevens operator O[ℓ,m](s) becomes a homogeneous polynomial in the
-# spin components sᵅ, and is equal to the spherical Harmonic Yₗᵐ(s) up to an
+# Evaluate a given linear combination of Stevens operators in the large-s limit,
+# where each spin operator is replaced by its dipole expectation value 𝐒. In this
+# limit, each Stevens operator O[ℓ,m](𝐒) becomes a homogeneous polynomial in the
+# spin components Sᵅ, and is equal to the spherical Harmonic Yₗᵐ(𝐒) up to an
 # overall (l- and m-dependent) scaling factor. Also return the gradient of the
 # scalar output.
-function energy_and_gradient_for_classical_anisotropy(s::Vec3, stvexp::StevensExpansion)
+function energy_and_gradient_for_classical_anisotropy(S::Vec3, stvexp::StevensExpansion)
     (; kmax, c0, c2, c4, c6) = stvexp
 
     E      = only(c0)
@@ -200,9 +217,9 @@ function energy_and_gradient_for_classical_anisotropy(s::Vec3, stvexp::StevensEx
 
     # Quadratic contributions
 
-    X = s⋅s
-    Jp¹ = s[1] + im*s[2]
-    Jz¹ = s[3]
+    X = S⋅S
+    Jp¹ = S[1] + im*S[2]
+    Jz¹ = S[3]
     Jp² = Jp¹*Jp¹
     Jz² = Jz¹*Jz¹
 
