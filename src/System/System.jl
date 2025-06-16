@@ -206,32 +206,35 @@ end
     CartesianIndex(altmod1.(to_cell(site) .+ bond.n, dims)..., bond.j)
 end
 
-"""
-    spin_label(sys::System, i::Int)
-
-If atom `i` carries a single spin-``s`` moment, then returns the half-integer
-label ``s``. Otherwise, throws an error.
-"""
-function spin_label(sys::System, i::Int)
+# Interprets i as a sublattice of sys, regardless of reshaping
+function spin_label_sublattice(sys::System, i::Int)
     if sys.mode == :dipole_uncorrected
         return Inf
     else
         @assert sys.mode in (:dipole, :SUN)
-        allequal(sys.Ns[:,:,:,i]) || error("Spin varies between chemical cells")
-        return (sys.Ns[1,1,1,i]-1)/2
+        allequal(view(sys.Ns, :, :, :, i)) || error("Spin varies between chemical cells")
+        return (sys.Ns[1, 1, 1, i] - 1) / 2
     end
+end
+
+"""
+    spin_label(sys::System, i::Int)
+
+If atom `i` (referenced from the original crystal) carries a single spin-``s``
+moment, then returns the half-integer label ``s``. Otherwise, throws an error.
+"""
+function spin_label(sys::System, i::Int)
+    return spin_label_sublattice(something(sys.origin, sys), i)
 end
 
 
 """
     eachsite(sys::System)
-    eachsite(sys::System, i)
 
-An iterator over all [`Site`](@ref)s in the system. Restrict to one sublattice
-`i` with an optional second argument.
+An iterator over all [`Site`](@ref)s in the system.
 """
 @inline eachsite(sys::System) = CartesianIndices(size(sys.dipoles))
-@inline eachsite(sys::System, i) = CartesianIndices((sys.dims..., i:i))
+@inline eachsite_sublattice(sys::System, i) = CartesianIndices((sys.dims..., i:i))
 
 """
 nsites(sys::System) = length(eachsite(sys))
@@ -386,7 +389,7 @@ function symmetry_equivalent_bonds(sys::System, bond::Bond)
             new_bond = map_bond_to_other_crystal(orig_crystal(sys), bond′, sys.crystal, new_i)
 
             # loop over all new crystal cells and push site pairs
-            for site_i in eachsite(sys, new_bond.i)
+            for site_i in eachsite_sublattice(sys, new_bond.i)
                 site_j = bonded_site(site_i, new_bond, sys.dims)
                 site_i < site_j && push!(ret, (site_i, site_j, new_bond.n))
             end
@@ -522,9 +525,11 @@ end
 """
     set_spin_rescaling!(sys, α)
 
-In dipole mode, rescale all spin magnitudes ``S → α S``. In SU(N) mode, rescale
-all SU(N) coherent states ``Z → √α Z`` such that every expectation value
-rescales like ``⟨A⟩ → α ⟨A⟩``.
+Sets an internal rescaling parameter ``α``. In dipole mode, this fixes each spin
+magnitude ``|S| = α s``, where ``s`` is the [`spin_label`](@ref) of the relevant
+magnetic moment. In SU(N) mode, this fixes each coherent state magnitude, ``|Z|
+= √α``, which leads to an effective renormalization of all local expectation
+values, ``⟨A⟩ → α ⟨A⟩``. By default ``α = 1``.
 """
 function set_spin_rescaling!(sys::System{0}, α)
     for site in eachsite(sys)
@@ -537,6 +542,51 @@ function set_spin_rescaling!(sys::System{N}, κ) where N
     sys.κs .= κ
     for site in eachsite(sys)
         set_coherent!(sys, sys.coherents[site], site)
+    end
+end
+
+"""
+    set_spin_rescaling_for_static_sum_rule!(sys)
+
+Sets the classical dipole magnitude to ``\\sqrt{s(s+1)}`` rather than ``s`` for
+each quantum spin-``s`` moment. Valid only for systems in dipole mode.
+
+This dipole rescaling convention may be helpful in combination with
+[`SampledCorrelationsStatic`](@ref) or [`SCGA`](@ref) calculators, which sample
+spins from the classical Boltzmann distribution. The estimated
+[`intensities_static`](@ref) ``\\mathcal{S}(𝐪)``, when integrated over all
+``𝐪``, will be exactly consistent with the quantum-mechanical identity
+``⟨\\hat{S}^2⟩ = s(s+1)`` for dipole operator ``\\hat{S}``.
+
+At high temperatures, this dipole rescaling may also be useful in combination
+with the [`SampledCorrelations`](@ref) calculator, which estimates structure
+factor intensities using classical spin dynamics [1]. Note, however, that this
+dipole rescaling is **not** appropriate for `SampledCorrelations` measurements
+at low temperatures; a better `kT`-dependent classical-to-quantum correction
+factor is already provided in [`intensities`](@ref) and
+[`intensities_static`](@ref). Obtaining good structure factor estimates at
+intermediate temperatures is an ongoing research topic. One strategy is to
+employ the more general and expensive "κ rescaling" procedure, which dynamically
+rescales spins according to running quantum sum rule estimates [2]. See
+[`set_spin_rescaling!`](@ref), which allows fine-grained control over the dipole
+rescaling.
+
+## References
+
+1. [T. Huberman et al., _A study of the quantum classical crossover in the spin
+   dynamics of the 2D S=5/2 antiferromagnet Rb₂MnF₄: neutron scattering,
+   computer simulations and analytic theories_, J. Stat. Mech. **P05017**
+   (2008)](https://doi.org/10.1088/1742-5468/2008/05/P05017).
+2. [D. Dahlbom et al., _Quantum-to-classical crossover in generalized spin
+   systems: Temperature-dependent spin dynamics of FeI₂_, Phys. Rev. B **109**,
+   014427 (2024)](https://doi.org/10.1103/PhysRevB.109.014427).
+"""
+function set_spin_rescaling_for_static_sum_rule!(sys::System{N}) where N
+    iszero(N) || error("Quantum dipole amplification requires :dipole or :dipole_uncorrected mode")
+    for site in eachsite(sys)
+        s = sys.κs[site]
+        sys.κs[site] = sqrt(s*(s+1))
+        set_dipole!(sys, sys.dipoles[site], site)
     end
 end
 

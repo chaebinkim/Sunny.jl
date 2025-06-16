@@ -1,12 +1,35 @@
 # Version History
 
-## v0.7.6
+## v0.7.7
 (In development)
 
+* Add [`set_spin_rescaling_for_static_sum_rule!`](@ref) which sets the classical
+  dipole magnitude to ``\sqrt{s (s + 1)}`` for each quantum spin-``s`` moment.
+* Add module [`SCGA`](@ref) for calculating [`intensities_static`](@ref) within
+  the self-consistent Gaussian approximation ([PR
+  #355](https://github.com/SunnySuite/Sunny.jl/pull/355)).
+* Fix heatmaps in [`plot_intensities`](@ref) for very large grids ([PR
+  #379](https://github.com/SunnySuite/Sunny.jl/pull/379)).
+
+## v0.7.6
+(May 1, 2025)
+
+* Extend [`powder_average`](@ref) to support static intensities.
 * Vacancies defined by [`set_vacancy_at!`](@ref) are supported in linear spin
   wave theory. Empty sites are modeled using bosons that do not excite.
+* The default implementation of [`SpinWaveTheoryKPM`](@ref) now uses Lanczos for
+  higher accuracy.
 * Fix correctness of [`suggest_magnetic_supercell`](@ref) when multiple
   wavevectors are provided.
+* Fix atom indexing when setting interactions for a reshaped system ([PR
+  #359](https://github.com/SunnySuite/Sunny.jl/pull/359)).
+* Normalize `axis` argument to [`SpinWaveTheorySpiral`](@ref) for correctness.
+* Fix thermal prefactor `kT` in spin wave theory ([Issue
+  #370](https://github.com/SunnySuite/Sunny.jl/issues/370)).
+* In `:dipole` or `:SUN` mode, functions [`set_onsite_coupling!`](@ref) and
+  [`set_pair_coupling!`](@ref) throw an error when used with quantum spin 1/2.
+  Construct [`System`](@ref) using mode `:dipole_uncorrected` for such models
+  ([Issue #376](https://github.com/SunnySuite/Sunny.jl/issues/376)).
 
 ## v0.7.5
 (Jan 20, 2025)

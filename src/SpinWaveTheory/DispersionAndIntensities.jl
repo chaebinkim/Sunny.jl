@@ -56,10 +56,11 @@ end
 
 
 # Returns |1 + nB(ω)| where nB(ω) = 1 / (exp(βω) - 1) is the Bose function.
+# Equivalent to |1 / expm1(-βω)| where expm1(x) = e^x-1.
 function thermal_prefactor(ω; kT)
     @assert kT >= 0
     iszero(ω) && return Inf
-    return abs(1 / (1 - exp(-ω/kT)))
+    return abs(1 / expm1(-ω/kT))
 end
 
 
@@ -97,7 +98,7 @@ function excitations!(T, tmp, swt::SpinWaveTheory, q)
     try
         return bogoliubov!(T, tmp)
     catch _
-        error("Instability at wavevector q = $q")
+        rethrow(ErrorException("Not an energy-minimum; wavevector q = $q unstable."))
     end
 end
 
@@ -171,13 +172,12 @@ function intensities_bands(swt::SpinWaveTheory, qpts; kT=0, with_negative=false)
     disp = zeros(Float64, L, Nq)
     intensity = zeros(eltype(measure), L, Nq)
 
-
     for (iq, q) in enumerate(qpts.qs)
         q_global = cryst.recipvecs * q
         view(disp, :, iq) .= view(excitations!(T, H, swt, q), 1:L)
 
         for i in 1:Na, μ in 1:Nobs
-            r_global = global_position(sys, (1,1,1,i)) # + offsets[μ,i]
+            r_global = global_position(sys, (1, 1, 1, i)) # + offsets[μ, i]
             ff = get_swt_formfactor(measure, μ, i)
             Avec_pref[μ, i] = exp(- im * dot(q_global, r_global))
             Avec_pref[μ, i] *= compute_form_factor(ff, norm2(q_global))
@@ -213,10 +213,10 @@ function intensities_bands(swt::SpinWaveTheory, qpts; kT=0, with_negative=false)
                 end
             end
 
-            map!(corrbuf, measure.corr_pairs) do (α, β)
-                Avec[α] * conj(Avec[β]) / Ncells
+            map!(corrbuf, measure.corr_pairs) do (μ, ν)
+                Avec[μ] * conj(Avec[ν]) / Ncells
             end
-            intensity[band, iq] = thermal_prefactor(disp[band]; kT) * measure.combiner(q_global, corrbuf)
+            intensity[band, iq] = thermal_prefactor(disp[band, iq]; kT) * measure.combiner(q_global, corrbuf)
         end
     end
 

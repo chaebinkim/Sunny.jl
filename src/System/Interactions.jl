@@ -262,8 +262,8 @@ end
 
 The total system [`energy`](@ref) divided by the number of sites.
 """
-function energy_per_site(sys::System{N}) where N
-    return energy(sys) / nsites(sys)
+function energy_per_site(sys::System{N}; check_normalization=true) where N
+    return energy(sys; check_normalization) / nsites(sys)
 end
 
 """
@@ -271,8 +271,10 @@ end
 
 The total system energy. See also [`energy_per_site`](@ref).
 """
-function energy(sys::System{N}) where N
-    validate_normalization(sys)
+function energy(sys::System{N}; check_normalization=true) where N
+    if check_normalization 
+        validate_normalization(sys)
+    end
     E = 0.0
 
     # Zeeman coupling to external field
@@ -285,7 +287,7 @@ function energy(sys::System{N}) where N
         for i in 1:natoms(sys.crystal)
             # Interactions for sublattice i (same for every cell)
             interactions = sys.interactions_union[i]
-            E += energy_aux(interactions, sys, eachsite(sys, i))
+            E += energy_aux(interactions, sys, eachsite_sublattice(sys, i))
         end
     else
         for site in eachsite(sys)
@@ -396,7 +398,7 @@ function set_energy_grad_dipoles!(∇E, dipoles::Array{Vec3, 4}, sys::System{N})
     if is_homogeneous(sys)
         for i in 1:natoms(sys.crystal)
             interactions = sys.interactions_union[i]
-            set_energy_grad_dipoles_aux!(∇E, dipoles, interactions, sys, eachsite(sys, i))
+            set_energy_grad_dipoles_aux!(∇E, dipoles, interactions, sys, eachsite_sublattice(sys, i))
         end
     else
         for site in eachsite(sys)
@@ -481,7 +483,7 @@ function set_energy_grad_coherents!(HZ, Z::Array{CVec{N}, 4}, sys::System{N}) wh
     if is_homogeneous(sys)
         for i in 1:natoms(sys.crystal)
             interactions = sys.interactions_union[i]
-            set_energy_grad_coherents_aux!(HZ, Z, dE_dS, interactions, sys, eachsite(sys, i))
+            set_energy_grad_coherents_aux!(HZ, Z, dE_dS, interactions, sys, eachsite_sublattice(sys, i))
         end
     else
         for site in eachsite(sys)

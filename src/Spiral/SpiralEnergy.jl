@@ -1,3 +1,26 @@
+# Identify the "special cases" for the propagation wavevector k. Case 1 is all
+# integer k components (i.e., k=[0,0,0] up to periodicity), and Case 2 is all
+# half integer k components, apart from Case 1. The fallback, Case 3, is any
+# other k. For example, there could be a discontinuity between the spiral
+# energies for ordering wavevectors k = [1/2, 0, 0] and [1/2+ϵ, 0, 0], even in
+# the limit ϵ → 0. To account for some floating point roundoff, we select an
+# empirical and somewhat arbitrary tolerance ϵ = 1e-8 for the case check.
+#
+# The public-facing user interface expects k in RLU for the conventional cell.
+# If the system has been reshaped, however, then all internal aspects of the
+# calculation must proceed in terms of k_reshaped (RLU for the reshaped cell).
+function spiral_propagation_case(k_reshaped)
+    ϵ = 1e-8
+    if norm(k_reshaped - round.(k_reshaped)) < ϵ
+        return 1
+    elseif norm(2k_reshaped - round.(2k_reshaped)) < 2ϵ
+        return 2
+    else
+        return 3
+    end
+end
+
+
 """
     spiral_energy(sys::System; k, axis)
 
@@ -7,14 +30,15 @@ normal to the polarization plane (in global Cartesian coordinates).
 
 When ``𝐤`` is incommensurate, this calculation can be viewed as creating an
 infinite number of periodic copies of `sys`. The spins on each periodic copy are
-rotated about the `axis` vector, with the angle ``θ = 2π 𝐤⋅𝐫``, where `𝐫`
+rotated about the `axis` vector, with the angle ``θ = 2π 𝐤⋅𝐫``, where ``𝐫``
 denotes the displacement vector between periodic copies of `sys` in multiples of
 the lattice vectors of the chemical cell.
 
-The return value is the energy associated with one periodic copy of `sys`. The
-special case ``𝐤 = 0`` yields result is identical to [`energy`](@ref).
+The return value is the energy associated with one periodic copy of `sys`.
+Selecting ``𝐤 = 0`` yields the ordinary system [`energy`](@ref).
 
-See also [`minimize_spiral_energy!`](@ref) and [`repeat_periodically_as_spiral`](@ref).
+See also [`minimize_spiral_energy!`](@ref) and
+[`repeat_periodically_as_spiral`](@ref).
 """
 function spiral_energy(sys::System{0}; k, axis)
     sys.mode in (:dipole, :dipole_uncorrected) || error("SU(N) mode not supported")
@@ -47,8 +71,11 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
     @assert sys.dims == (1,1,1)
     Na = natoms(sys.crystal)
 
-    x, y, z = normalize(axis)
-    K = Sunny.Mat3([0 -z y; z 0 -x; -y x 0])
+    k_reshaped = to_reshaped_rlu(sys, k)
+
+    axis = normalize(axis)
+    x, y, z = axis
+    K = Mat3([0 -z y; z 0 -x; -y x 0])
     K² = K*K
 
     for i in 1:Na
@@ -63,7 +90,7 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
             Sj = sys.dipoles[j]
 
             # Rotation angle along `axis` for cells displaced by `n`
-            θ = 2π * dot(k, n)
+            θ = 2π * dot(k_reshaped, n)
             dθdk = 2π*n
 
             # Rotation as a 3×3 matrix
@@ -109,20 +136,17 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
         A0 = sys.ewald.A
         A0 = reshape(A0, Na, Na)
 
-        Ak = Sunny.precompute_dipole_ewald_at_wavevector(sys.crystal, (1,1,1), k) * sys.ewald.μ0_μB²
+        Ak = precompute_dipole_ewald_at_wavevector(sys.crystal, (1,1,1), k_reshaped) * sys.ewald.μ0_μB²
         Ak = reshape(Ak, Na, Na)
 
-        ϵ = 1e-8
-        if norm(k - round.(k)) < ϵ
-            for i in 1:Na, j in 1:Na
+        k_case = spiral_propagation_case(k_reshaped)
+
+        for i in 1:Na, j in 1:Na
+            if k_case == 1
                 E += real(μ[i]' * A0[i, j] * μ[j]) / 2
-            end
-        elseif norm(2k - round.(2k)) < ϵ
-            for i in 1:Na, j in 1:Na
+            elseif k_case == 2
                 E += real(μ[i]' * ((I+K²)*A0[i, j]*(I+K²) + K²*Ak[i, j]*K²) * μ[j]) / 2
-            end
-        else
-            for i in 1:Na, j in 1:Na
+            else @assert k_case == 3
                 E += real(μ[i]' * ((I+K²)*A0[i, j]*(I+K²) + (im*K+K²)*Ak[i, j]*(im*K+K²)/2) * μ[j]) / 2
             end
         end
@@ -220,7 +244,7 @@ function minimize_spiral_energy!(sys, axis; maxiters=10_000, k_guess=randn(sys.r
 
     # Minimize f, the energy of a spiral. See comment in `minimize_energy!` for
     # a discussion of the tolerance settings.
-    options = Optim.Options(; iterations=maxiters, x_tol=1e-12, g_tol=0, f_reltol=NaN, f_abstol=NaN)
+    options = Optim.Options(; iterations=maxiters, x_abstol=1e-12, g_abstol=0, f_reltol=NaN, f_abstol=NaN)
 
     # LBFGS does not converge to high precision, but ConjugateGradient can fail
     # to converge: https://github.com/JuliaNLSolvers/LineSearches.jl/issues/175.

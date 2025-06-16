@@ -5,18 +5,19 @@
 # Factor Conventions](@ref). The variables ``𝐪`` and ``ω`` describe momentum
 # and energy transfer _to_ the sample.
 #
-# For systems without inversion-symmetry, the structure factor intensities at
-# ``± 𝐪`` may be inequivalent. To highlight this, consider a simple 1D chain
-# that includes only Dzyaloshinskii–Moriya interactions between neighboring
-# sites. Coupling to an external field then breaks time-reversal symmetry,
-# giving rise to an inequivalence of intensities ``\mathcal{S}(±𝐪,ω)``
+# The structure factor intensities at ``± 𝐪`` may be inequivalent if the model
+# lacks inversion symmetry. Consider, for example, a 1D chain that includes only
+# Dzyaloshinskii–Moriya interactions between neighboring sites. Coupling to an
+# external field then breaks time-reversal symmetry, giving rise to an
+# inequivalence of intensities ``\mathcal{S}(±𝐪,ω)``
 
 using Sunny, GLMakie
 
 # Selecting the P1 spacegroup will effectively disable all symmetry analysis.
 # This can be a convenient way to avoid symmetry-imposed constraints on the
-# couplings. A disadvantage is that all bonds are treated as inequivalent, and
-# Sunny will therefore not be able to propagate any couplings between bonds.
+# couplings. A disadvantage is that all bonds are treated as
+# symmetry-inequivalent, such that each coupling within the unit cell must be
+# specified independently.
 
 latvecs = lattice_vectors(2, 2, 1, 90, 90, 90)
 cryst = Crystal(latvecs, [[0,0,0]], "P1")
@@ -52,7 +53,7 @@ end
 
 # The Zeeman coupling polarizes the magnetic moments in the ``𝐁 ∝ ẑ``
 # direction. The spin dipoles, however, are anti-aligned with the magnetic
-# moments, and therefore point towards ``-ẑ``. This is shown below.
+# moments and therefore point towards ``-ẑ``. This is shown below.
 
 plot_spins(sys)
 
@@ -86,6 +87,6 @@ res2 = intensities_bands(swt, path)
 # elastic peak at ``𝐪 = [0,0,0]``, reflecting the ferromagnetic ground state.
 
 fig = Figure(size=(768, 300))
-plot_intensities!(fig[1, 1], res1; title="Classical dynamics")
-plot_intensities!(fig[1, 2], res2; title="Spin wave theory")
+plot_intensities!(fig[1, 1], res1; ylims=(0, 15D), title="Classical dynamics")
+plot_intensities!(fig[1, 2], res2; ylims=(0, 15D), title="Spin wave theory")
 fig
