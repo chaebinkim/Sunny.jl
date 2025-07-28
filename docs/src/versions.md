@@ -1,15 +1,34 @@
 # Version History
 
-## v0.7.7
+## v0.7.9
 (In development)
+
+* Fix tolerance of Spglib symmetry inference ([PR
+  #405](https://github.com/SunnySuite/Sunny.jl/pull/405)).
+
+## v0.7.8
+(Jul 1, 2025)
+
+* Compatibility with Makie v0.24 ([PR
+  #393](https://github.com/SunnySuite/Sunny.jl/pull/393)).
+
+## v0.7.7
+(Jun 25, 2025)
 
 * Add [`set_spin_rescaling_for_static_sum_rule!`](@ref) which sets the classical
   dipole magnitude to ``\sqrt{s (s + 1)}`` for each quantum spin-``s`` moment.
 * Add module [`SCGA`](@ref) for calculating [`intensities_static`](@ref) within
   the self-consistent Gaussian approximation ([PR
   #355](https://github.com/SunnySuite/Sunny.jl/pull/355)).
+* Extend [`enable_dipole_dipole!`](@ref) to accept a demagnetization factor or
+  tensor `demag`. The new default is isotropic demagnetization, `demag = 1/3`,
+  appropriate for a spherical sample in vacuum. Set `demag = 0` to disable
+  demagnetization ([Issue
+  #380](https://github.com/SunnySuite/Sunny.jl/issues/380)).
 * Fix heatmaps in [`plot_intensities`](@ref) for very large grids ([PR
   #379](https://github.com/SunnySuite/Sunny.jl/pull/379)).
+* Make energy minimization more reliable ([PR
+  #397](https://github.com/SunnySuite/Sunny.jl/pull/397)).
 
 ## v0.7.6
 (May 1, 2025)

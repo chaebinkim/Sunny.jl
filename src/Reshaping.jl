@@ -106,7 +106,7 @@ function reshape_supercell_aux(sys::System{N}, new_cryst::Crystal, new_dims::NTu
     # Restore dipole-dipole interactions if present. This involves pre-computing
     # an interaction matrix that depends on `new_dims`.
     if !isnothing(sys.ewald)
-        enable_dipole_dipole!(new_sys, sys.ewald.μ0_μB²)
+        enable_dipole_dipole!(new_sys, sys.ewald.μ0_μB²; sys.ewald.demag)
     end
 
     return new_sys
@@ -183,7 +183,7 @@ function repeat_periodically_as_spiral(sys::System, counts::NTuple{3,Int}; k, ax
     # Original positions units of supervecs (components between 0 and 1)
     rs = [supervecs \ global_position(sys, site) for site in eachsite(sys)]
 
-    # Tighted symprec suitable for scaled positions
+    # Tightened symprec suitable for scaled positions
     symprec = sys.crystal.symprec / minimum(sys.dims)
 
     # Copy per-site quantities

@@ -19,8 +19,8 @@ end
 
 # Creates a copy of the Vector of PairCouplings. This is useful when cloning a
 # system; mutable updates to one clone should not affect the other.
-function clone_interactions(ints::Interactions)
-    (; onsite, pair) = ints
+function clone_interactions(int::Interactions)
+    (; onsite, pair) = int
     return Interactions(onsite, copy(pair))
 end
 
@@ -62,7 +62,7 @@ end
 
 
 """
-    enable_dipole_dipole!(sys::System, μ0_μB²)
+    enable_dipole_dipole!(sys::System, μ0_μB²; demag=1/3)
 
 Enables long-range interactions between magnetic dipole moments,
 
@@ -71,11 +71,24 @@ Enables long-range interactions between magnetic dipole moments,
 ```
 
 where the sum is over all pairs of sites (singly counted), including periodic
-images, regularized using the Ewald summation convention. Each magnetic moment
-is ``μ = -g μ_B 𝐒``, where ``𝐒`` is the spin angular momentum dipole. The
-parameter `μ0_μB²` specifies the physical constant ``μ_0 μ_B^2``, which has
-dimensions of length³-energy. Obtain this constant for a given system of
-[`Units`](@ref) via its `vacuum_permeability` property.
+images. Each magnetic moment is ``μ_i = -g μ_B 𝐒_i``, where ``𝐒_i`` is the
+spin angular momentum dipole. The parameter `μ0_μB²` specifies the physical
+constant ``μ_0 μ_B^2``, which has dimensions of length³-energy. Obtain this
+constant for a given system of [`Units`](@ref) via its `vacuum_permeability`
+property.
+
+Geometry of the macroscopic sample enters through the demagnetization factor or
+tensor `demag`. Special cases are:
+
+  * `demag = 1/3` for isotropic demagnetization. This is the default and is
+    valid for sphere and cube sample geometries.
+  * `demag = Diagonal([0, 0, 1])` for a sheet-like geometry with surface normal
+    in ``ẑ``.
+  * `demag = Diagonal([1/2, 1/2, 0])` for a needle-like geometry aligned with
+    ``ẑ``.
+
+In a vacuum background, the demagnetization tensor should have trace 1. Set
+`demag = 0` to artificially neglect demagnetization effects.
 
 # Example
 
@@ -84,25 +97,55 @@ units = Units(:meV, :angstrom)
 enable_dipole_dipole!(sys, units.vacuum_permeability)
 ```
 
-!!! tip "Efficiency considerations"  
-    Dipole-dipole interactions are very efficient in the context of spin
-    dynamics simulation, e.g. [`Langevin`](@ref). Sunny applies the fast Fourier
-    transform (FFT) to spins on each Bravais sublattice, such that the
-    computational cost to integrate one time-step scales like ``M^2 N \\ln N``,
-    where ``N`` is the number of cells in the system and ``M`` is the number of
-    Bravais sublattices per cell. Conversely, dipole-dipole interactions are
-    highly _inefficient_ in the context of a [`LocalSampler`](@ref). Each Monte
-    Carlo update of a single spin currently requires scanning over all other
-    spins in the system.
-
 See also [`modify_exchange_with_truncated_dipole_dipole!`](@ref).
+
+!!! tip "Demagnetization details"  
+
+    Formal summation over the infinitely many dipole-dipole pair interactions
+    becomes mathematically ambiguous when the macroscopic sample has a nonzero net
+    magnetic moment, ``𝐌 = ∑_i μ_i``. The traditional Ewald method resolves this
+    ambiguity by neglecting surface effects that would lead to demagnetization. For
+    physical correctness, however, the Ewald energy must be augmented with a surface
+    energy term,
+    ```math
+        E_\\mathrm{surf} = \\frac{μ_0}{2V} 𝐌⋅\\mathcal{N} 𝐌,
+    ```
+    where ``\\mathcal{N}`` is the demagnetization tensor (`demag`). Assuming vacuum
+    background, it can be expressed as an integral over the sample volume ``V``,
+    ```math
+        \\mathcal{N}^{αβ} = - \\frac{1}{4π} ∫_V d𝐱 ∇^α ∇^β |𝐱|^{-1}.
+    ```
+    Note that ``\\mathcal{N}`` has trace 1 because ``∇^2|𝐱|^{-1} = -4πδ(𝐱)``
+    when the integration domain contains the origin.
+
+    This surface correction to the Ewald energy originally appeared in S. de Leeuw,
+    J. Perram, and E. Smith, Proc. R. Soc. London A **373**, 27 (1980); **373**, 57
+    (1980); **388**, 177 (1983). For a pedagogical review, see [V. Ballenegger, J.
+    Chem. Phys. **140**, 161102 (2014)](https://doi.org/10.1063/1.4872019).
+
+    If the sample is embedded in another material, the surface correction
+    ``E_\\mathrm{surf}`` still applies, but ``\\mathcal{N}`` should be calculated
+    differently. For example, a spherical inclusion generally has ``\\mathcal{N} =
+    1/(2μ'+1) ≤ 1/3`` where ``μ' ≥ 1`` denotes the relative permeability of the
+    background medium.
+
+!!! tip "Efficiency considerations"  
+
+    Dipole-dipole interactions are very efficient in the context of spin dynamics
+    simulation, e.g. [`Langevin`](@ref). Sunny applies the fast Fourier transform
+    (FFT) to spins on each Bravais sublattice, such that the computational cost to
+    integrate one time-step scales like ``M^2 N \\ln N``, where ``N`` is the number
+    of cells in the system and ``M`` is the number of Bravais sublattices per cell.
+    Conversely, dipole-dipole interactions are highly _inefficient_ in the context
+    of a [`LocalSampler`](@ref). Each Monte Carlo update of a single spin currently
+    requires scanning over all other spins in the system.
 """
-function enable_dipole_dipole!(sys::System{N}, μ0_μB²=nothing) where N
+function enable_dipole_dipole!(sys::System, μ0_μB²=nothing; demag=1/3)
     if isnothing(μ0_μB²)
         @warn "Deprecated syntax! Consider `enable_dipole_dipole!(sys, units.vacuum_permeability)` where `units = Units(:meV, :angstrom)`."
         μ0_μB² = Units(:meV, :angstrom).vacuum_permeability
     end
-    sys.ewald = Ewald(sys, μ0_μB²)
+    sys.ewald = Ewald(sys, μ0_μB², Mat3(demag * I))
     return
 end
 
@@ -305,25 +348,25 @@ function energy(sys::System{N}; check_normalization=true) where N
 end
 
 # Total energy associated with the sites of one sublattice
-function energy_aux(ints::Interactions, sys::System{N}, sites) where N
+function energy_aux(int::Interactions, sys::System{N}, sites) where N
     E = 0.0
 
     # Single-ion anisotropy
     if N == 0       # Dipole mode
-        stvexp = ints.onsite :: StevensExpansion
+        stvexp = int.onsite :: StevensExpansion
         for site in sites
             S = sys.dipoles[site]
             E += energy_and_gradient_for_classical_anisotropy(S, stvexp)[1]
         end
     else            # SU(N) mode
-        Λ = ints.onsite :: HermitianC64
+        Λ = int.onsite :: HermitianC64
         for site in sites
             Z = sys.coherents[site]
             E += real(dot(Z, Λ, Z))
         end
     end
 
-    for pc in ints.pair
+    for pc in int.pair
         (; bond, isculled) = pc
         isculled && break
 
@@ -413,18 +456,18 @@ function set_energy_grad_dipoles!(∇E, dipoles::Array{Vec3, 4}, sys::System{N})
 end
 
 # Calculate the energy gradient `∇E' for all sites of one sublattice
-function set_energy_grad_dipoles_aux!(∇E, dipoles::Array{Vec3, 4}, ints::Interactions, sys::System{N}, sites) where N
+function set_energy_grad_dipoles_aux!(∇E, dipoles::Array{Vec3, 4}, int::Interactions, sys::System{N}, sites) where N
     # Single-ion anisotropy only contributes in dipole mode. In SU(N) mode, the
     # anisotropy matrix will be incorporated directly into local H matrix.
     if sys.mode in (:dipole, :dipole_uncorrected)
-        stvexp = ints.onsite :: StevensExpansion
+        stvexp = int.onsite :: StevensExpansion
         for site in sites
             S = dipoles[site]
             ∇E[site] += energy_and_gradient_for_classical_anisotropy(S, stvexp)[2]
         end
     end
 
-    for pc in ints.pair
+    for pc in int.pair
         (; bond, isculled) = pc
         isculled && break
 
@@ -496,14 +539,14 @@ function set_energy_grad_coherents!(HZ, Z::Array{CVec{N}, 4}, sys::System{N}) wh
     fill!(dipoles, zero(Vec3))
 end
 
-function set_energy_grad_coherents_aux!(HZ, Z::Array{CVec{N}, 4}, dE_dS::Array{Vec3, 4}, ints::Interactions, sys::System{N}, sites) where N
+function set_energy_grad_coherents_aux!(HZ, Z::Array{CVec{N}, 4}, dE_dS::Array{Vec3, 4}, int::Interactions, sys::System{N}, sites) where N
     for site in sites
         # HZ += (Λ + dE/dS S) Z
-        Λ = ints.onsite :: HermitianC64
+        Λ = int.onsite :: HermitianC64
         HZ[site] += mul_spin_matrices(Λ, dE_dS[site], Z[site])
     end
 
-    for pc in ints.pair
+    for pc in int.pair
         (; bond, isculled) = pc
         isculled && break
 

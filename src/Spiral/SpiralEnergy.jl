@@ -78,20 +78,22 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
     K = Mat3([0 -z y; z 0 -x; -y x 0])
     K² = K*K
 
-    for i in 1:Na
-        (; onsite, pair) = sys.interactions_union[i]
+    for (i, int) in enumerate(sys.interactions_union)
         Si = sys.dipoles[i]
 
         # Pair coupling
-        for coupling in pair
+        for coupling in int.pair
             (; isculled, bond, bilin, biquad) = coupling
             isculled && break
-            (; j, n) = bond
+
+            @assert i == bond.i
+            j = bond.j
+
             Sj = sys.dipoles[j]
 
             # Rotation angle along `axis` for cells displaced by `n`
-            θ = 2π * dot(k_reshaped, n)
-            dθdk = 2π*n
+            θ = 2π * dot(k_reshaped, bond.n)
+            dθdk = 2π*bond.n
 
             # Rotation as a 3×3 matrix
             s, c = sincos(θ)
@@ -103,9 +105,9 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
             J = Mat3(bilin*I)
             @assert R'*J*R ≈ J
 
-            # Accumulate energy and derivatives
+            # Accumulate energy and derivatives. By invariance of J verified
+            # above, note that Si' J (R Sj) = (R' Si)' J Sj.
             E += Si' * J * (R * Sj)
-            @assert Si' * J * (R * Sj) ≈ (R' * Si)' * J * Sj
             if accum_grad
                 dEds[i] += J * (R * Sj)
                 dEds[j] += J' * (R' * Si)
@@ -117,7 +119,7 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
         end
 
         # Onsite coupling
-        E_aniso, dEds_aniso = energy_and_gradient_for_classical_anisotropy(Si, onsite)
+        E_aniso, dEds_aniso = energy_and_gradient_for_classical_anisotropy(Si, int.onsite)
         E += E_aniso
 
         # Zeeman coupling
@@ -131,12 +133,12 @@ function spiral_energy_and_gradient_aux!(dEds, sys::System{0}; k, axis)
 
     # See "spiral_energy.lyx" for derivation
     if !isnothing(sys.ewald)
+        (; demag, μ0_μB², A) = sys.ewald
         μ = [magnetic_moment(sys, site) for site in eachsite(sys)]
 
-        A0 = sys.ewald.A
-        A0 = reshape(A0, Na, Na)
+        A0 = reshape(A, Na, Na)
 
-        Ak = precompute_dipole_ewald_at_wavevector(sys.crystal, (1,1,1), k_reshaped) * sys.ewald.μ0_μB²
+        Ak = precompute_dipole_ewald_at_wavevector(sys.crystal, (1,1,1), demag, k_reshaped) * μ0_μB²
         Ak = reshape(Ak, Na, Na)
 
         k_case = spiral_propagation_case(k_reshaped)
@@ -242,22 +244,22 @@ function minimize_spiral_energy!(sys, axis; maxiters=10_000, k_guess=randn(sys.r
     f(params) = spiral_f(sys, axis, params, λ)
     g!(G, params) = spiral_g!(G, sys, axis, params, λ)
 
-    # Minimize f, the energy of a spiral. See comment in `minimize_energy!` for
-    # a discussion of the tolerance settings.
-    options = Optim.Options(; iterations=maxiters, x_abstol=1e-12, g_abstol=0, f_reltol=NaN, f_abstol=NaN)
+    # See `minimize_energy!` for discussion of the tolerance settings.
+    x_abstol = 1e-14 * √length(params)
+    options = Optim.Options(; iterations=maxiters, x_abstol, x_reltol=NaN, g_abstol=NaN, f_reltol=NaN, f_abstol=NaN)
 
-    # LBFGS does not converge to high precision, but ConjugateGradient can fail
-    # to converge: https://github.com/JuliaNLSolvers/LineSearches.jl/issues/175.
-    # TODO: Call only ConjugateGradient when issue is fixed.
-    method = Optim.LBFGS(; linesearch=Optim.LineSearches.BackTracking(order=2))
-    λ = 1 * abs(spiral_energy_per_site(sys; k=k_guess, axis)) # regularize at some energy scale
+    # First, optimize with regularization λ that pushes spins away from
+    # alignment with the spiral `axis`. See `spiral_f` for precise definition.
+    method = Optim.ConjugateGradient()
+    λ = 1 * abs(spiral_energy_per_site(sys; k=k_guess, axis))
     res0 = Optim.optimize(f, g!, collect(reinterpret(Float64, params)), method, options)
-    λ = 0 # disable regularization
-    res = Optim.optimize(f, g!, Optim.minimizer(res0), Optim.ConjugateGradient(), options)
+    # Second, disable regularization to find true energy minimum.
+    λ = 0
+    res = Optim.optimize(f, g!, Optim.minimizer(res0), method, options)
 
     k = unpack_spiral_params!(sys, axis, Optim.minimizer(res))
 
-    if Optim.converged(res)
+    if Optim.converged(res) || Optim.termination_code(res) == Optim.TerminationCode.SmallXChange
         # For aesthetics, wrap k components to [1-ϵ, -ϵ)
         return wrap_to_unit_cell(k; symprec=1e-6)
     else
