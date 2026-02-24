@@ -1,21 +1,53 @@
-function empty_interactions(mode, na, N)
-    # Cannot use `fill` because the PairCoupling arrays must be
-    # allocated separately for later mutation.
-    return map(1:na) do _
-        Interactions(empty_anisotropy(mode, N), PairCoupling[])
+function repopulate_couplings_from_params!(sys::System)
+    @assert is_homogeneous(sys)
+    ints = interactions_homog(sys)
+
+    # If `sys` has been reshaped, then also repopulate `sys.origin` (useful for
+    # view_crystal(sys)).
+    if !isnothing(sys.origin)
+        repopulate_couplings_from_params!(sys.origin)
+    end
+
+    # Clear current interactions
+    for i in eachindex(ints)
+        ints[i].onsite = ints[i].onsite * 0.0
+        empty!(ints[i].pair)
+    end
+
+    # Accumulate from params
+    for param in sys.params
+        for (i, oc) in param.onsites
+            ints[i].onsite += oc * param.val
+        end
+
+        for pc in param.pairs
+            b = pc.bond
+            scaled_pc = pc * param.val
+            ints_pairs = ints[b.i].pair
+
+            # Find existing entry for this bond and accumulate
+            idx = findfirst(pc′ -> pc′.bond == b, ints_pairs)
+            if isnothing(idx)
+                push!(ints_pairs, scaled_pc)
+            else
+                ints_pairs[idx] += scaled_pc
+            end
+        end
+    end
+
+    # Non-culled couplings must come first to enable early `break`
+    for (; pair) in ints
+        sort!(pair, by = pc -> pc.isculled)
     end
 end
 
-# Warn up to `OverrideWarningMax` times about overriding a coupling
-OverrideWarningCnt::Int = 0
-OverrideWarningMax::Int = 5
-function warn_coupling_override(str)
-    global OverrideWarningCnt, OverrideWarningMax
-    OverrideWarningCnt < OverrideWarningMax && @info str
-    OverrideWarningCnt += 1
-    OverrideWarningCnt == OverrideWarningMax && @info "Suppressing future override notifications."
+function empty_interactions(mode::Symbol, Na::Int, N::Int)
+    # Cannot use `fill` because the PairCoupling arrays must be
+    # allocated separately for later mutation.
+    return map(1:Na) do _
+        Interactions(empty_anisotropy(mode, N), PairCoupling[])
+    end
 end
-
 
 # Creates a copy of the Vector of PairCouplings. This is useful when cloning a
 # system; mutable updates to one clone should not affect the other.
@@ -51,6 +83,13 @@ function to_inhomogeneous(sys::System{N}) where N
     ints = interactions_homog(sys)
 
     ret = clone_system(sys)
+
+    # TODO: Zero out params and interactions of ret.origin?
+
+    # Params unsupported for inhomogeneous system
+    empty!(ret.params)
+
+    # Population interactions_union as 4D array
     na = natoms(ret.crystal)
     ret.interactions_union = Array{Interactions}(undef, ret.dims..., na)
     for site in eachsite(ret)
@@ -154,12 +193,11 @@ end
 
 Sets the external magnetic field ``𝐁`` scaled by the Bohr magneton ``μ_B``.
 This scaled field has units of energy and couples directly to the dimensionless
-[`magnetic_moment`](@ref). At every site, the Zeeman coupling contributes an
-energy ``+ (𝐁 μ_B) ⋅ (g 𝐒)``, involving the local ``g``-tensor and spin
-angular momentum ``𝐒``. Commonly, ``g ≈ +2`` such that ``𝐒`` is favored to
-anti-align with the applied field ``𝐁``. Note that a given system of
-[`Units`](@ref) will implicitly use the Bohr magneton to convert between field
-and energy dimensions.
+[`magnetic_moments`](@ref). The Zeeman energy at each site is ``+ (𝐁 μ_B) ⋅ (g
+𝐒)``, involving the local ``g``-tensor and spin angular momentum ``𝐒``.
+Commonly, ``g ≈ +2`` such that ``𝐒`` is favored to anti-align with the applied
+field ``𝐁``. Note that a given system of [`Units`](@ref) will implicitly use
+the Bohr magneton to convert between field and energy dimensions.
 
 # Example
 
@@ -180,7 +218,7 @@ end
 
 Sets the external magnetic field ``𝐁`` scaled by the Bohr magneton ``μ_B`` for
 a single [`Site`](@ref). This scaled field has units of energy and couples
-directly to the dimensionless [`magnetic_moment`](@ref). Note that a given
+directly to the dimensionless [`magnetic_moments`](@ref). Note that a given
 system of [`Units`](@ref) will implicitly use the Bohr magneton to convert
 between field and energy dimensions.
 
@@ -193,15 +231,16 @@ end
 """
     set_vacancy_at!(sys::System, site::Site)
 
-Make a single site nonmagnetic. [`Site`](@ref) includes a unit cell and a
-sublattice index.
+Make a single [`Site`](@ref) nonmagnetic. The system must support inhomogeneous
+interactions via [`to_inhomogeneous`](@ref).
 """
 function set_vacancy_at!(sys::System{N}, site) where N
     is_homogeneous(sys) && error("Use `to_inhomogeneous` first.")
 
+    # In principle, we should set sys.Ns[site]=1 to get s=0. But :SUN mode
+    # doesn't yet support varying N so a safe marker is κ=0.
     site = to_cartesian(site)
     sys.κs[site] = 0.0
-    sys.gs[site] = zero(Mat3)
     sys.dipoles[site] = zero(Vec3)
     sys.coherents[site] = zero(CVec{N})
 
@@ -222,6 +261,51 @@ end
 
 function is_vacant(sys::System, site)
     return iszero(sys.κs[to_cartesian(site)])
+end
+
+"""
+    set_spin_s_at!(sys, s, site)
+
+Sets the quantum spin-`s` magnitude at a single [`Site`](@ref). The system must
+support inhomogeneous interactions via [`to_inhomogeneous`](@ref). Mode `:SUN`
+is not yet supported.
+
+!!! warning "Restriction on existing couplings"  
+    General interaction operators cannot be translated between spin
+    representations. The sole exception is 3×3 bilinear exchange. Higher order
+    couplings should be added only after the spin-`s` representation has been
+    fixed. To set these, use [`set_onsite_coupling_at!`](@ref) and
+    [`set_pair_coupling_at!`](@ref).
+"""
+function set_spin_s_at!(sys::System, s::Real, site::Site)
+    is_homogeneous(sys) && error("Use `to_inhomogeneous` first.")
+    sys.mode == :SUN && error("Mode :SUN not yet supported.")
+    isinteger(2s) || error("Spin s must be an exact multiple of 1/2.")
+    iszero(s) && error("Use `set_vacancy_at!` to fully remove a magnetic moment.")
+    is_vacant(sys, site) && error("Moment cannot be restored on vacant site.")
+
+    site = to_cartesian(site)
+    s_old = (sys.Ns[site]-1)/2
+    κ_old = sys.κs[site]
+    α = κ_old / s_old
+
+    # Require that any pair couplings are bilinear only
+    ints = interactions_inhomog(sys)
+    for pc in ints[site].pair
+        if !iszero(pc.biquad) || !isempty(pc.general.data)
+            error("Cannot change spin-s in presence of biquadratic coupling.")
+        end
+    end
+
+    # Warn on any onsite coupling, then remove
+    if !iszero(ints[site].onsite)
+        @warn "Removing onsite coupling at site $(site.I)."
+        sys.interactions_union[site].onsite = empty_anisotropy(sys.mode, 0)
+    end
+
+    sys.Ns[site] = Int(2s+1)
+    sys.κs[site] = α * s
+    set_dipole!(sys, sys.dipoles[site], site)
 end
 
 function local_energy_change(sys::System{N}, site, state::SpinState) where N
@@ -584,14 +668,27 @@ function set_energy_grad_coherents_aux!(HZ, Z::Array{CVec{N}, 4}, dE_dS::Array{V
     end
 end
 
+# Extract a characteristic energy scale from the magnitude of the energy
+# gradient on a typical site. This works well because ∇E retains a component
+# parallel to the spin (or coherent state).
+function characteristic_energy_scale(sys::System{0})
+    ∇Es, = get_dipole_buffers(sys, 1)
+    set_energy_grad_dipoles!(∇Es, sys.dipoles, sys)
+    return norm(∇E*κ for (∇E, κ) in zip(∇Es, sys.κs)) / sqrt(length(∇Es))
+end
+function characteristic_energy_scale(sys::System{N}) where N
+    ∇Es, = get_coherent_buffers(sys, 1)
+    set_energy_grad_coherents!(∇Es, sys.coherents, sys)
+    return norm(∇E*sqrt(κ) for (∇E, κ) in zip(∇Es, sys.κs)) / sqrt(length(∇Es))
+end
 
 # Internal testing functions
-function energy_grad_dipoles(sys::System{N}) where N
+function energy_grad_dipoles(sys::System)
     ∇E = zero(sys.dipoles)
     set_energy_grad_dipoles!(∇E, sys.dipoles, sys)
     return ∇E
 end
-function energy_grad_coherents(sys::System{N}) where N
+function energy_grad_coherents(sys::System)
     ∇E = zero(sys.coherents)
     set_energy_grad_coherents!(∇E, sys.coherents, sys)
     return ∇E
@@ -600,7 +697,7 @@ end
 
 # Check that the interactions of `sys` are invariant under a rotation about axis
 # by angle θ.
-function check_rotational_symmetry(sys::System{N}; axis, θ) where N
+function check_rotational_symmetry(sys::System; axis, θ)
     # TODO: Employ absolute tolerance `atol` for all `isapprox` checks below.
     # This will better handle comparisons with zero. This will require special
     # implementation for isapprox(::StevensExpansion, ::StevensExpansion).

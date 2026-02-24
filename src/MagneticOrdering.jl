@@ -1,19 +1,21 @@
 """
     print_wrapped_intensities(sys::System; nmax=10)
 
-For Bravais lattices: Prints up to `nmax` wavevectors according to their
-instantaneous (static) structure factor intensities, listed in descending order.
-For non-Bravais lattices: Performs the same analysis for each spin sublattice
-independently; the output weights are naïvely averaged over sublattices, without
-incorporating phase shift information. This procedure therefore wraps all
-wavevectors into the first Brillouin zone. Each wavevector coordinate is given
-between ``-1/2`` and ``1/2`` in reciprocal lattice units (RLU).  The output from
-this function will typically be used as input to
+Prints up to `nmax` wavevectors ``𝐪`` and their "wrapped" static structure
+factor weights. Each ``𝐪`` is exactly commensurate with the system volume and
+has components between ``-1/2`` and ``1/2`` in reciprocal lattice units (RLU).
+The output from this function will typically be used as input to
 [`suggest_magnetic_supercell`](@ref).
 
-Because this function does not incorporate phase information in its averaging
-over sublattices, the printed weights are not directly comparable with
-experiment. For that purpose, use [`SampledCorrelationsStatic`](@ref) instead.
+For simplicity, phase interference between sublattices is neglected. The
+reported weights are the sum of static structure factors
+``\\mathcal{S}_{jj}(𝐪)`` calculated independently for each sublattice ``j`` of
+the chemical cell. This is mathematically equivalent to averaging
+``\\mathcal{S}(𝐪)`` over all cells of the infinite reciprocal lattice. It is in
+this sense that the intensities are "wrapped" into the first reciprocal cell.
+
+To calculate the true ``\\mathcal{S}(𝐪)`` as an experimental observable, use
+[`SampledCorrelationsStatic`](@ref) instead.
 """
 function print_wrapped_intensities(sys::System{N}; nmax=10) where N
     sys.crystal == orig_crystal(sys) || error("Cannot perform this analysis on reshaped system.")
@@ -36,8 +38,8 @@ function print_wrapped_intensities(sys::System{N}; nmax=10) where N
         k = (Tuple(m) .- 1) ./ sys.dims
         k = [ki > 1/2 ? ki-1 : ki for ki in k]
 
-        kstr = fractional_vec3_to_string(k)
-        
+        kstr = vec3_to_string(k)
+
         if weight[m] < 0.01
             break
         end
@@ -188,7 +190,7 @@ function suggest_magnetic_supercell_aux(ks)
     # all_As = ([A1 A2 A3] for (A1, A2, A3) in Iterators.product(ns, ns, ns))
     # @assert minimum(score, all_As) == best_score
 
-    kstrs = join(map(fractional_vec3_to_string, ks), ", ")
+    kstrs = join(map(vec3_to_string, ks), ", ")
     println("""Possible magnetic supercell in multiples of lattice vectors:
                
                    $(repr(best_A))
@@ -207,7 +209,7 @@ function check_commensurate(sys; k)
         commensurate = commensurate && iszero(mod(sys.dims[i], denom))
     end
     if !commensurate
-        @warn "Wavevector $(fractional_vec3_to_string(k)) is incommensurate with system."
+        @warn "Wavevector $(vec3_to_string(k)) is incommensurate with system."
     end
 end
 

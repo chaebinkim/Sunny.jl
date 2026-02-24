@@ -90,7 +90,7 @@ especially in the limit of small `damping`.
 =#
 
 """
-    ImplicitMidpoint(dt::Float64; atol=1e-12) where N
+    ImplicitMidpoint(dt::Float64; tol=1e-12)
 
 The implicit midpoint method for integrating the Landau-Lifshitz spin dynamics
 or its generalization to SU(_N_) coherent states [1]. One call to the
@@ -108,25 +108,30 @@ mutable struct ImplicitMidpoint <: AbstractIntegrator
     dt      :: Float64
     damping :: Float64
     kT      :: Float64
-    atol    :: Float64
+    tol     :: Float64
 
-    function ImplicitMidpoint(dt=NaN; damping=0, kT=0, atol=1e-12)
+    function ImplicitMidpoint(dt=NaN; damping=0, kT=0, tol=1e-12, atol=nothing)
         dt <= 0      && error("Select positive dt")
         kT < 0       && error("Select nonnegative kT")
         damping < 0  && error("Select nonnegative damping")
 
+        if !isnothing(atol)
+            @warn "`atol` argument is deprecated! Use `tol` instead."
+            tol = atol
+        end
+
         # Noise in the implicit midpoint method can be problematic, because rare
         # events can lead to very slow convergence of the fixed point
-        # iterations. Perhaps it could be made to work if we clip the sampled
+        # iterations. Perhaps it could be made to work if we clamp the sampled
         # noise to a restricted magnitude? For now, simply disable the feature.
         iszero(kT) || error("ImplicitMidpoint with a Langevin thermostat is not currently supported.")
 
-        return new(dt, damping, kT, atol)
+        return new(dt, damping, kT, tol)
     end
 end
 
 function Base.copy(dyn::ImplicitMidpoint)
-    ImplicitMidpoint(dyn.dt; dyn.damping, dyn.kT, dyn.atol)
+    ImplicitMidpoint(dyn.dt; dyn.damping, dyn.kT, dyn.tol)
 end
 
 
@@ -137,29 +142,26 @@ end
 """
     suggest_timestep(sys, integrator; tol)
 
-Suggests a timestep for the numerical integration of spin dynamics according to
-a given error tolerance `tol`. The `integrator` should be [`Langevin`](@ref) or
-[`ImplicitMidpoint`](@ref). The suggested ``dt`` will be inversely proportional
-to the magnitude of the effective field ``|dE/d𝐒|`` arising from the current
-spin configuration in `sys`. The recommended timestep ``dt`` scales like `√tol`,
-which assumes second-order accuracy of the integrator.
+Suggests a timestep `dt` for spin dynamics simulation at a given error tolerance
+`tol`. The `integrator` should be [`Langevin`](@ref) or
+[`ImplicitMidpoint`](@ref). Ideally, the spin configuration in `sys` would be
+equilibrated to the target thermodynamic conditions. In practice, a
+configuration obtained from [`minimize_energy!`](@ref) should give a reasonable,
+if conservative, `dt` suggestion.
 
-The system `sys` should be initialized to an equilibrium spin configuration for
-the target temperature. Alternatively, a reasonably timestep estimate can be
-obtained from any low-energy spin configuration. For this, one can use
-[`randomize_spins!`](@ref) and then [`minimize_energy!`](@ref).
+The suggested `dt` scales like `√tol`, consistent with a second order
+integration scheme. In most cases, `dt` will also be inversely proportional to
+the characteristic magnitude of the energy gradient, ``∂E/∂𝐒_i``. If the
+Langevin noise magnitude ``λ k_B T`` dominates, however, then its inverse will
+limit the `dt` scale.
 
-Large `damping` magnitude or target temperature `kT` will tighten the timestep
-bound. If `damping` exceeds 1, it will rescale the suggested timestep by an
-approximate the factor ``1/damping``. If `kT` is the largest energy scale, then
-the suggested timestep will scale like `1/(damping*kT)`. Quantification of
-numerical error for stochastic dynamics is subtle. The stochastic Heun
-integration scheme is weakly convergent of order-1, such that errors in the
-estimates of averaged observables may scale like `dt`. This implies that the
-`tol` argument may actually scale like the _square_ of the true numerical error,
-and should be selected with this in mind.
+Analysis of error in Langevin dynamics can be subtle. Sunny uses the stochastic
+Heun scheme, which has a weak convergence rate of order 1. This means that
+errors in certain statistical observables may scale like `dt` rather than
+`dt^2`. In such cases, the `tol` parameter controls the _square_ of the
+numerical error, and can be tightened appropriately.
 """
-function suggest_timestep(sys::System{N}, integrator::Union{Langevin, ImplicitMidpoint}; tol) where N
+function suggest_timestep(sys::System, integrator::Union{Langevin, ImplicitMidpoint}; tol)
     (; dt) = integrator
     dt_bound = suggest_timestep_aux(sys, integrator; tol)
 
@@ -250,9 +252,9 @@ function Base.show(io::IO, integrator::Langevin)
 end
 
 function Base.show(io::IO, integrator::ImplicitMidpoint)
-    (; dt, atol) = integrator
+    (; dt, tol) = integrator
     dt = isnan(integrator.dt) ? "<missing>" : repr(dt)
-    println(io, "ImplicitMidpoint($dt; atol=$atol)")
+    println(io, "ImplicitMidpoint($dt; tol=$tol)")
 end
 
 
@@ -355,8 +357,7 @@ function step!(sys::System{N}, integrator::Langevin) where N
 end
 
 
-# Variants of the implicit midpoint method
-
+# Return early for speed
 function fast_isapprox(x, y; atol)
     acc = 0.
     for i in eachindex(x)
@@ -379,7 +380,7 @@ function step!(sys::System{0}, integrator::ImplicitMidpoint; max_iters=100)
     check_timestep_available(integrator)
 
     S = sys.dipoles
-    atol = integrator.atol * √length(S)
+    atol = integrator.tol * √length(S)
 
     (ΔS, Ŝ, S′, S″, ξ, ∇E) = get_dipole_buffers(sys, 6)
 
@@ -400,7 +401,7 @@ function step!(sys::System{0}, integrator::ImplicitMidpoint; max_iters=100)
         # If converged, then we can return
         if fast_isapprox(S′, S″; atol)
             # Normalization here should not be necessary in principle, but it
-            # could be useful in practice for finite `atol`.
+            # could be useful in practice for finite `tol`.
             @. S = normalize_dipole(S″, sys.κs)
             return
         end
@@ -408,7 +409,7 @@ function step!(sys::System{0}, integrator::ImplicitMidpoint; max_iters=100)
         S′, S″ = S″, S′
     end
 
-    error("Spherical midpoint method failed to converge to tolerance $atol after $max_iters iterations.")
+    error("Spherical midpoint method failed to converge to tolerance $(integrator.tol) after $max_iters iterations.")
 end
 
 
@@ -422,7 +423,7 @@ function step!(sys::System{N}, integrator::ImplicitMidpoint; max_iters=100) wher
     check_timestep_available(integrator)
 
     Z = sys.coherents
-    atol = integrator.atol * √length(Z)
+    atol = integrator.tol * √length(Z)
 
     (ΔZ, Z̄, Z′, Z″, ζ, HZ) = get_coherent_buffers(sys, 6)
     fill_noise!(sys.rng, ζ, integrator)

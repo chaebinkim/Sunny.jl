@@ -1,4 +1,10 @@
-function newton_with_backtracking(fgh!, x0; f_reltol=NaN, x_reltol=NaN, g_abstol=NaN, maxiters=20, armijo_c=1e-4, armijo_backoff=0.5, armijo_α_min=1e-4, show_trace=false)
+struct OptimizationError <: Exception
+    msg::String
+end
+
+function newton_with_backtracking(fgh!, x0; f_reltol=NaN, g_abstol=NaN, maxiters=20,
+                                  armijo_c=1e-4, armijo_backoff=0.5, armijo_α_min=1e-4,
+                                  armijo_slack=0.0, show_trace=false)
     # Make a copy of the initial guess.
     x = copy(x0)
 
@@ -10,12 +16,11 @@ function newton_with_backtracking(fgh!, x0; f_reltol=NaN, x_reltol=NaN, g_abstol
 
     # Evaluate objective function f, gradient, and Hessian.
     f = fgh!(0.0, g, H, x)
-    norm(g) < g_abstol && return x
+    maximum(abs, g) < g_abstol && return x
 
-    function has_converged(x, candidate_x, f, candidate_f, g)
-        return (!isnan(x_reltol) && isapprox(x, candidate_x; rtol=x_reltol)) ||
-               (!isnan(f_reltol) && isapprox(f, candidate_f; rtol=f_reltol)) ||
-               (!isnan(g_abstol) && norm(g) < g_abstol)
+    function has_converged(f, candidate_f, g)
+        return (!isnan(f_reltol) && isapprox(f, candidate_f; rtol=f_reltol)) ||
+               (!isnan(g_abstol) && maximum(abs, g) < g_abstol)
     end
 
     for k in 1:maxiters
@@ -33,10 +38,12 @@ function newton_with_backtracking(fgh!, x0; f_reltol=NaN, x_reltol=NaN, g_abstol
         @. candidate_x = x - α * p
         candidate_f = fgh!(0.0, g, H, candidate_x)
 
-        # Backtracking line search until Armijo condition is satisfied:
-        # f(candidate_x) ≤ f(x) - c * α * dot(g, p)
-        while candidate_f > f - armijo_c * α * g_dot_p
-            has_converged(x, candidate_x, f, candidate_f, g) && return candidate_x
+        # Backtracking line search until Armijo condition is satisfied:  
+        #   f(candidate_x) ≤ f(x) - c * α * dot(g, p) + armijo_slack  
+        # The slack parameter essentially deactivates backtracking when f is
+        # close to convergence, reverting to usual Newton iterations.
+        while candidate_f > f - armijo_c * α * g_dot_p + armijo_slack
+            has_converged(f, candidate_f, g) && return candidate_x
             α < armijo_α_min && error("Failed to satisfy Armijo condition. Consider reducing armijo_α_min=$armijo_α_min or a tolerance parameter.")
 
             α *= armijo_backoff
@@ -47,12 +54,12 @@ function newton_with_backtracking(fgh!, x0; f_reltol=NaN, x_reltol=NaN, g_abstol
         if show_trace
             println("Iter $k: α=$α, |g|=$(norm(g)), f(x)=$candidate_f, x=$candidate_x")
         end
-        has_converged(x, candidate_x, f, candidate_f, g) && return candidate_x
+        has_converged(f, candidate_f, g) && return candidate_x
 
         # Accept candidate updates. Note that g and H will also be reused.
         x .= candidate_x
         f = candidate_f
     end
 
-    error("Failed to converge in maxiters=$maxiters iterations.")
+    throw(OptimizationError("Failed to converge in maxiters=$maxiters iterations"))
 end

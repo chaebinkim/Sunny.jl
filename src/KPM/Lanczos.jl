@@ -104,10 +104,17 @@ function lanczos(mulA!, mulS!, v; min_iters, resolution=Inf, lhs=zeros(length(v)
     Sw  = zero(v)
 
     mulS!(Sv, v)
-    c = sqrt(real(dot(v, Sv)))
-    @assert c ≈ 1 "Initial vector not normalized"
-    @. v /= c
-    @. Sv /= c
+    vSv = dot(v, Sv)
+
+    # Check internal consistency of S and v. Valid under FP64 precision and
+    # assuming that S has characteristic scale 1.
+    atol = norm(v)^2 * length(v) * 1e-12
+    @assert isapprox(imag(vSv), 0; atol) # Hermitian S
+    @assert isapprox(real(vSv), 1; atol) # Normalized v
+
+    # Try to improve normalization precision.
+    @. v /= sqrt(real(vSv))
+    @. Sv /= sqrt(real(vSv))
 
     mulA!(w, Sv)
     α = real(dot(w, Sv))
@@ -165,7 +172,7 @@ end
 
 Returns estimates of the extremal eigenvalues of the matrix (Ĩ D)^2 using the
 Lanczos algorithm. Here Ĩ is the Bogoliubov identity and D is the dynamical
-matrix from LSWT for the wavevector q_reshaped. `niters` should be given a value
+matrix from SWT for the wavevector q_reshaped. `niters` should be given a value
 smaller than the dimension of `A`.
 """
 function eigbounds(swt, q_reshaped, niters)

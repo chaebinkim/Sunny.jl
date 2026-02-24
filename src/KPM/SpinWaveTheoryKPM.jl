@@ -1,6 +1,6 @@
 """
     SpinWaveTheoryKPM(sys::System; measure, regularization=1e-8, tol=nothing,
-                      niters=nothing, niters_bounds=10, method=:lanczos)
+                      niters=nothing, method=:lanczos)
 
 A variant of [`SpinWaveTheory`](@ref) that estimates [`intensities`](@ref) using
 iterated matrix-vector products. By avoiding direct matrix diagonalization, this
@@ -8,27 +8,36 @@ method reduces computational cost from cubic to linear-scaling in the system
 size ``N``. Large system sizes can arise, e.g., for models of quenched disorder
 or models with nearly incommensurate ordering wavevectors.
 
-Computational cost scales like ``𝒪(N M + M^2)``. The number of iterations ``M``
-may be specified directly with the `niters` parameter. Alternatively, one may
-specify a dimensionless error tolerance `tol` such that `M ≈ -2 log10(tol) Δϵ /
-fwhm` where `Δϵ` is the estimated spectral bandwidth of excitations and `fwhm`
-is the full width at half maximum of the user-supplied broadening `kernel`.
-Common choices for `tol` are `0.05` (more speed) or `0.01` (more accuracy).
-Either `tol` or `niters` is required. The parameter `niters_bounds` selects the
-Krylov subspace dimension to be used for estimating spectral bounds.
+Energy resolution is controlled by the dimensionless `tol` parameter. Common
+choices are `tol=0.05` (more speed) or `0.01` (more accuracy). This will
+determine the number of iterations as `M ≈ -2 log10(tol) Δϵ / fwhm`, where `Δϵ`
+is the estimated spectral bandwidth of excitations and `fwhm` is the full width
+at half maximum of the user-supplied broadening `kernel`. Computational cost
+scales like ``𝒪(N M + M^2)``. Use `niters` instead of `tol` to directly specify
+``M``.
 
-!!! warning "Accuracy considerations"  
-    Energy-space resolution scales inversely with the number ``M`` of
-    iterations. Such broadening errors can usually be well controlled via the
-    tolerance parameter `tol`. A more serious problem is intensity loss at bands
-    with small excitation energy, e.g., in the viscinity of Goldstone modes. In
-    certain cases this missing intensity will be due to numerical roundoff error
-    that cannot be fixed by increasing the number of iterations ``M``.
+!!! warning "Intensity loss at low-energy excitations"
 
-Two `method` options are available, `:lanczos` and `:kpm`.  Lanczos is generally
-preferred, as it achieves near-optimal accuracy for a given number of iterations
-[1, 2]. The Lanczos implementation builds on earlier research using the Kernel
-Polynomial Method [3], which may be of historical interest.
+    Not all numerical artifacts can be resolved by reducing `tol`. In particular,
+    there may be unavoidable intensity loss at low-energy excitations, e.g., near
+    Goldstone modes. This type of error originates from finite numerical precision
+    and ill-conditioning of the dynamical matrix.
+
+!!! tip "Consider `SampledCorrelations` when calculating powder averages"
+
+    Spin wave theory requires an independent calculation for each ``𝐪`` point of
+    interest. Consequently, it can be very slow to sample a 3D volume of
+    ``𝐪``-space, e.g., as required for a [`powder_average`](@ref). A compelling
+    alternative may be [`SampledCorrelations`](@ref). It uses real-time spin
+    dynamics to calculate structure factor data over the entire 3D grid of
+    commensurate ``𝐪``-vectors in one shot. This may provide a considerable speedup
+    at the cost of: limited ``𝐪``-space resolution and stochastic error due to
+    statistical sampling.
+
+Two choices of `method` are possible. Lanczos is the default because it achieves
+appears near-optimal accuracy at fixed iterations ``M`` [1, 2] and can detect
+energetic instabilities. The alternative, `method=:kpm`, implements the Kernel
+Polynomial Method as described in Ref. [3], which may be of historical interest.
 
 ## References
 
@@ -67,11 +76,13 @@ end
 
 function intensities(swt_kry::SpinWaveTheoryKPM, qpts; energies, kernel::AbstractBroadening, kT=0.0, verbose=false)
     qpts = convert(AbstractQPoints, qpts)
-    data = zeros(eltype(swt_kry.swt.measure), length(energies), length(qpts.qs))
+    data = zeros(eltype(swt_kry.swt.measure), length(energies), size(qpts.qs)...)
     return intensities!(data, swt_kry, qpts; energies, kernel, kT, verbose)
 end
 
 function intensities!(data, swt_kry::SpinWaveTheoryKPM, qpts; energies, kernel::AbstractBroadening, kT=0.0, verbose=false)
+    qpts = convert(AbstractQPoints, qpts)
+    @assert size(data) == (length(energies), size(qpts.qs)...)
     (; method) = swt_kry
     if method == :lanczos
         intensities_lanczos!(data, swt_kry, qpts; energies, kernel, kT, verbose)
@@ -103,7 +114,6 @@ end
 
 function intensities_kpm!(data, swt_kry, qpts; energies, kernel, kT, verbose)
     iszero(kT) || error("The :kpm backend does not support finite kT")
-    qpts = convert(AbstractQPoints, qpts)
 
     (; swt, tol, niters, niters_bounds) = swt_kry
     (; sys, measure) = swt
@@ -112,7 +122,7 @@ function intensities_kpm!(data, swt_kry, qpts; energies, kernel, kT, verbose)
     isnothing(kernel.fwhm) && error("Cannot determine the kernel fwhm")
 
     @assert eltype(data) == eltype(measure)
-    @assert size(data) == (length(energies), length(qpts.qs))
+    @assert size(data) == (length(energies), size(qpts.qs)...)
 
     Na = nsites(sys)
     Ncells = Na / natoms(cryst)
@@ -130,7 +140,8 @@ function intensities_kpm!(data, swt_kry, qpts; energies, kernel, kT, verbose)
     α1 = zeros(ComplexF64, Nobs, 2L)
     α2 = zeros(ComplexF64, Nobs, 2L)
 
-    for (iq, q) in enumerate(qpts.qs)
+    for iq in CartesianIndices(qpts.qs)
+        q = qpts.qs[iq]
         q_reshaped = to_reshaped_rlu(sys, q)
         q_global = cryst.recipvecs * q
 
@@ -229,8 +240,6 @@ function intensities_kpm!(data, swt_kry, qpts; energies, kernel, kT, verbose)
 end
 
 function intensities_lanczos!(data, swt_kry, qpts; energies, kernel, kT, verbose)
-    qpts = convert(AbstractQPoints, qpts)
-
     (; swt, tol, niters, niters_bounds) = swt_kry
     (; sys, measure) = swt
     cryst = orig_crystal(sys)
@@ -238,7 +247,7 @@ function intensities_lanczos!(data, swt_kry, qpts; energies, kernel, kT, verbose
     isnothing(kernel.fwhm) && error("Cannot determine the kernel fwhm")
 
     @assert eltype(data) == eltype(measure)
-    @assert size(data) == (length(energies), length(qpts.qs))
+    @assert size(data) == (length(energies), size(qpts.qs)...)
     fill!(data, zero(eltype(data)))
 
     Na = nsites(sys)
@@ -255,7 +264,8 @@ function intensities_lanczos!(data, swt_kry, qpts; energies, kernel, kT, verbose
     v = zeros(ComplexF64, 2L)
     Sv = zeros(ComplexF64, 2L)
 
-    for (iq, q) in enumerate(qpts.qs)
+    for iq in CartesianIndices(qpts.qs)
+        q = qpts.qs[iq]
         q_reshaped = to_reshaped_rlu(sys, q)
         q_global = cryst.recipvecs * q
 
@@ -333,7 +343,12 @@ function intensities_lanczos!(data, swt_kry, qpts; energies, kernel, kT, verbose
                 end
             end
 
-            (; values, vectors) = eigen(tridiag)
+            (; values, vectors) = try
+                eigen(tridiag)
+            catch e
+                # Fallback for https://github.com/JuliaLang/LinearAlgebra.jl/issues/1491
+                eigen(Hermitian(collect(tridiag)))
+            end
 
             for (iω, ω) in enumerate(energies)
                 f(x) = kernel(x, ω) * thermal_prefactor(x; kT)

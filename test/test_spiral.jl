@@ -61,7 +61,8 @@ end
     set_onsite_coupling!(sys, S -> D*S[3]^2, 1)
     set_field!(sys, [0, 0, h])
 
-    k = Sunny.minimize_luttinger_tisza_exchange(sys; k_guess=randn(3))
+    # A random initial guess would fail about 2 in 1000 trials.
+    k = Sunny.minimize_luttinger_tisza_exchange(sys; k_guess=[0.1, 0.2, 0.3])
     @test k[1:2] ≈ [0.5, 0.5]
 
     axis = [0, 0, 1]
@@ -75,7 +76,7 @@ end
     # and (2) It does not account for canting, which is a q=0 contribution
     # to the S(q). For this problem, the canting effect can be counteracted
     # by a halving of the Zeeman energy of a site.
-    lt_exch = Sunny.luttinger_tisza_exchange(sys; k) / length(eachsite(sys))
+    lt_exch = Sunny.luttinger_tisza_exchange(sys; k) / nsites(sys)
     zeeman = sys.dipoles[1]' * sys.gs[1] * sys.extfield[1]
     constant_shift = sys.interactions_union[1].onsite.c0[1]
     @test spiral_energy_per_site(sys; k, axis) ≈ lt_exch + constant_shift + zeeman/2
@@ -120,19 +121,19 @@ end
     k_ref = [0, 0, 0.14264604656200577]
     k_ref_alt = [0, 0, 1] - k_ref
 
-    # TODO: Investigate periodic failures. For debugging, the special guess  
+    # TODO: Investigate optimization failures. For debugging, the special guess  
     #
     #     k_guess = [-0.40243248293794137, 0.8540414903329187, -0.6651248667822778]
     #
-    # will degrade accuracy by about 4 digits and cause deterministic test
-    # failure. Surprisingly, it also fails when switching the implementation of
-    # `minimize_luttinger_tisza_exchange` to a different optimizer:  
+    # will degrade accuracy by about 4 digits. This failure persists when
+    # switching the implementation of `minimize_luttinger_tisza_exchange` to a
+    # different optimizer:
     #
     #     Optim.LBFGS(; linesearch=Optim.LineSearches.BackTracking(order=2))
     #
     # The underlying problem could be the low quality of gradient estimation
-    # using finite-differencing.
-    k = Sunny.minimize_luttinger_tisza_exchange(sys; k_guess=randn(3))
+    # using naive central-differencing.
+    k = Sunny.minimize_luttinger_tisza_exchange(sys; k_guess=[0.1, 0.2, 0.3])
     @test isapprox(k, k_ref; atol=1e-6) || isapprox(k, k_ref_alt; atol=1e-6)
 
     axis = [0, 0, 1]
@@ -204,10 +205,8 @@ end
     set_exchange!(sys, J6, bond6)
     set_exchange!(sys, J7, bond7)
 
-    # Unfortunately, randomizing the initial guess will lead to occasional
-    # optimization failures. TODO: Use ForwardDiff to improve accuracy.
-    k_guess = [0.2, 0.4, 0.8]
-    k = Sunny.minimize_luttinger_tisza_exchange(sys; k_guess)
+    # A random guess would occasionally fail
+    k = Sunny.minimize_luttinger_tisza_exchange(sys; k_guess=[0.2, 0.4, 0.8])
     E = Sunny.luttinger_tisza_exchange(sys; k)
     @test isapprox(E, E_ref; atol=1e-12)
     @test isapprox(k, k_ref; atol=1e-5) || isapprox(k, k_ref_alt; atol=1e-5)
@@ -233,15 +232,8 @@ end
     axis = [1, 0, 0]
     set_exchange!(sys, diagm(0.8 * axis) + dmvec(D * axis), Bond(1, 1, [0, 0, 1]))
 
-    # TODO: Get to the bottom of this Optim.jl failure case
-    #=
-        sys.dipoles .= [[-0.7849258507107553, -0.39367187538995435, 0.4784494366314514]]
-        k = minimize_spiral_energy!(sys, axis; k_guess=[0.2, 0.4, 0.8])
-    =#
-
-    # TODO: Replace with randomize_spins! and k_guess=randn(3) when Optim.jl fixed
-    set_dipole!(sys, [-0.2, 0.4, 1.1], (1, 1, 1, 1))
-    k_guess = [0.2, 0.4, 0.8] # See failure below
+    randomize_spins!(sys)
+    k_guess=randn(3)
     k = minimize_spiral_energy!(sys, axis; k_guess)
     @test k[3] ≈ 3/4
 

@@ -17,17 +17,21 @@ abstract type AbstractSpinWaveTheory end
 """
     SpinWaveTheory(sys::System; measure, regularization=1e-8)
 
-Constructs an object to perform linear spin wave theory. The system must be in
-an energy minimizing configuration. Enables calculation of [`dispersion`](@ref)
-bands. If pair correlations are specified with `correspec`, one can also
-calculate [`intensities_bands`](@ref) and broadened [`intensities`](@ref).
+Constructs an object to perform linear spin wave theory. The `measure` object
+specifies observable fields, ``𝐪``-dependent contractions, and form factors.
+Common choices are [`ssf_perp`](@ref), [`ssf_trace`](@ref), and
+[`ssf_custom`](@ref). The resulting `SpinWaveTheory` object can be used to
+calculate [`intensities_bands`](@ref) and broadened [`intensities`](@ref). If
+`measure=nothing`, it is still possible to calculate the [`dispersion`](@ref)
+curves. Eigenvectors describing the Bogoliubov bosons are available in
+[`excitations`](@ref).
 
-The spins in system must be energy-minimized, otherwise the Cholesky step of the
-Bogoliubov diagonalization procedure will fail. The parameter `regularization`
-adds a small positive shift to the diagonal of the dynamical matrix to avoid
-numerical issues with quasi-particle modes of vanishing energy. Physically, this
-shift can be interpreted as application of an inhomogeneous field aligned with
-the magnetic ordering.
+The magnetic structure in `sys` must be energy minimized, otherwise the Cholesky
+step of the Bogoliubov diagonalization procedure will fail. The parameter
+`regularization` adds a small positive shift to the diagonal of the dynamical
+matrix to avoid numerical issues with quasi-particle modes of vanishing energy.
+Physically, this shift can be interpreted as application of an inhomogeneous
+field aligned with the magnetic ordering.
 """
 struct SpinWaveTheory <: AbstractSpinWaveTheory
     sys            :: System
@@ -47,21 +51,9 @@ function SpinWaveTheory(sys::System; measure::Union{Nothing, MeasureSpec}, regul
         error("Size mismatch. Check that measure is built using consistent system.")
     end
 
-    # Create single chemical cell that matches the full system size.
+    # Create single enlarged chemical cell that matches the full system size.
     new_shape = cell_shape(sys) * diagm(Vec3(sys.dims))
     new_cryst = reshape_crystal(orig_crystal(sys), new_shape)
-
-    # Sort crystal positions so that their order matches sites in sys. Quadratic
-    # scaling in system size.
-    global_positions = global_position.(Ref(sys), vec(eachsite(sys)))
-    p = map(new_cryst.positions) do r
-        pos = new_cryst.latvecs * r
-        findfirst(global_positions) do refpos
-            isapprox(pos, refpos, atol=new_cryst.symprec)
-        end
-    end
-    @assert allunique(p)
-    permute_sites!(new_cryst, p)
 
     # Create a new system with dims (1,1,1). A clone happens in all cases.
     sys = reshape_supercell_aux(sys, new_cryst, (1,1,1))

@@ -1,11 +1,12 @@
-@testitem "Kitchen Sink" begin
+@testitem "Kitchen sink" begin
     using LinearAlgebra
 
     # Pyrochlore with nonstandard, primitive lattice vectors
     latvecs = [[1, 1, 0] [1, 0, 1] [0, 1, 1]] / 2
     positions = [[5, 5, 1], [5, 1, 5], [1, 5, 5], [5, 5, 5]] / 8
 
-    cryst = @test_logs (:warn, "Lattice vectors are not right-handed.") Crystal(latvecs, positions)
+    msg = "Cell is 1/4 the standard size for spacegroup 227. Consider `standardize`."
+    cryst = @test_logs (:info, msg) Crystal(latvecs, positions)
     natoms = Sunny.natoms(cryst)
 
     moments = [1 => Moment(s=5/2, g=7.2)]
@@ -86,7 +87,7 @@ end
     A = [1 1 1; -1 1 0; 0 0 1]
     sys = reshape_supercell(sys, A)
     randomize_spins!(sys)
-    @test minimize_energy!(sys) > 0
+    @test minimize_energy!(sys).converged
 
     q = rand(Float64, 3)
     swt = SpinWaveTheory(sys; measure=nothing)
@@ -192,7 +193,8 @@ end
     using LinearAlgebra
 
     latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
-    cryst = Crystal(latvecs, [[0,0,0], [0.4,0,0]]; types=["A", "B"])
+    msg = "Nonstandard tetragonal cell for spacegroup 99. Consider `standardize`."
+    cryst = @test_logs (:info, msg) Crystal(latvecs, [[0,0,0], [0.4,0,0]]; types=["A", "B"])
 
     sys = System(cryst, [1 => Moment(s=1, g=2), 2 => Moment(s=2, g=2)], :dipole)
     set_pair_coupling!(sys, (S1, S2) -> +(S1'*diagm([2,-1,-1])*S1)*(S2'*diagm([2,-1,-1])*S2), Bond(1, 2, [0,0,0]))
@@ -516,13 +518,15 @@ end
     end
 
     sys = System(Sunny.cubic_crystal(), [1 => Moment(s=1, g=1)], :SUN)
+    bond = Bond(1, 1, [1, 0, 0])
 
     q = [0.23, 0, 0]
 
-    set_pair_coupling!(sys, (Si, Sj) -> -(Si'*Sj), Bond(1,1,[1,0,0]); extract_parts=true)
+    set_pair_coupling!(sys, (Si, Sj) -> -(Si'*Sj), bond; extract_parts=true)
     H_conventional = make_lswt_hamiltonian(sys, q)
 
-    set_pair_coupling!(sys, (Si, Sj) -> -(Si'*Sj), Bond(1,1,[1,0,0]); extract_parts=false)
+    msg = "Overwriting coupling for $bond"
+    @test_logs (:warn, msg) set_pair_coupling!(sys, (Si, Sj) -> -(Si'*Sj), bond; extract_parts=false)
     H_alternative = make_lswt_hamiltonian(sys, q)
 
     @test H_conventional ≈ H_alternative
@@ -581,7 +585,7 @@ end
         S1i, S1j = Sunny.to_product_space(S1, S1)
         S2i, S2j = Sunny.to_product_space(S2, S2)
         scalar, bilin, biquad, tensordec = Sunny.decompose_general_coupling(J′*(S1i' * S1j + S2i' * S2j), 4, 4; extract_parts=fast)
-        Sunny.set_pair_coupling_aux!(sys, scalar, Sunny.Mat3(I)*bilin, biquad, tensordec, Bond(1, 1, [-1,0,0]))
+        Sunny.set_pair_coupling_aux!(sys, scalar, Sunny.Mat3(I)*bilin, biquad, tensordec, Bond(1, 1, [-1,0,0]), nothing)
 
         return sys, cryst
     end
@@ -611,7 +615,7 @@ end
     res = intensities(swt, qs; energies, kernel)
     # println(round.(res.data; digits=12))
     data_ref = [0.042551644188 0.148531187027 0.042551644188; 0.123710785142 0.944407715529 0.123710785142; 1.079575108835 1.261286085876 1.079575108835; 0.492703854423 0.168505531387 0.492703854423; 0.087770506619 0.06066521855 0.087770506619; 0.034461978527 0.030825188879 0.034461978527; 0.018214262744 0.018585357642 0.018214262744; 0.011230027228 0.012410289203 0.011230027228; 0.007607320239 0.008868510563 0.007607320239; 0.005490942587 0.006651305827 0.005490942587; 0.004148615687 0.005172181047 0.004148615687]
-    isapprox(res.data, data_ref; atol=1e-9)
+    @test isapprox(res.data, data_ref; atol=1e-9)
 end
 
 
